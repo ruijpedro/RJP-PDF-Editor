@@ -7,7 +7,7 @@ import mammoth from 'mammoth';
 import html2pdf from 'html2pdf.js';
 import {
   FileText, FileType2, Upload, Download, Lock, Unlock, MousePointer2,
-  Type, Save, SaveAs, Trash2, ChevronLeft, ChevronRight, RotateCcw, Info, Mic, MicOff
+  Type, Save, Trash2, ChevronLeft, ChevronRight, RotateCcw, Info, Mic, MicOff
 } from 'lucide-react';
 import './style.css';
 
@@ -411,7 +411,7 @@ function App() {
             <div className="saveGroup">
               <input className="saveName" value={saveName} onChange={e=>setSaveName(e.target.value)} aria-label="Nome do PDF" />
               <button className="btn saveBtn" onClick={()=>savePdf()}><Save size={17}/> Guardar</button>
-              <button className="btn saveAsBtn" onClick={()=>askSaveAs(savePdf)}><SaveAs size={17}/> Guardar como...</button>
+              <button className="btn saveAsBtn" onClick={()=>askSaveAs(savePdf)}><Download size={17}/> Guardar como...</button>
             </div>
             <div className="notice"><Info size={16}/><span>A edição substitui o texto visualmente no PDF: cobre o texto original e escreve o novo na mesma zona.</span></div>
           </aside>
@@ -443,7 +443,7 @@ function App() {
             <div className="wordSaveActions">
               <input className="saveName" value={saveName} onChange={e=>setSaveName(e.target.value)} aria-label="Nome do PDF" />
               <button className="btn saveBtn" onClick={()=>exportWordPdf()}><Save size={17}/> Guardar PDF</button>
-              <button className="btn saveAsBtn" onClick={()=>askSaveAs(exportWordPdf)}><SaveAs size={17}/> Guardar como...</button>
+              <button className="btn saveAsBtn" onClick={()=>askSaveAs(exportWordPdf)}><Download size={17}/> Guardar como...</button>
             </div>
           </div>
           <div className="wordPaper" ref={wordRef} contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{__html:wordHtml}} />
