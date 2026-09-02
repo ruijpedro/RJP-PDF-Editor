@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: '/RJP-PDF-Editor/',
+  plugins: [react()],
+  base: '/RJP-PDF-Editor/'
 });

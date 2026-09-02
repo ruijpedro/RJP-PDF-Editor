@@ -1,38 +1,10 @@
-# RJP PDF Editor — WebApp
+# RJP PDF Editor V0.6
 
-WebApp para abrir um PDF localmente no browser, associar uma password ao ficheiro no dispositivo, adicionar texto e exportar um novo PDF.
+Novidades desta versão:
+- **Guardar** com nome definido na aplicação.
+- **Guardar como...** para escolher um novo nome antes de descarregar o PDF.
+- **Ditado por voz em PT-PT** na edição de texto PDF, quando o browser suporta Web Speech API.
+- No Android, a caixa de texto é compatível com o **Gboard/Teclado Google**: tocar na caixa e usar o botão de microfone do próprio teclado também permite ditar.
+- Mantém abertura de PDF e DOCX, edição visual de PDF, edição de Word no browser, password local por ficheiro e publicação via GitHub Pages.
 
-## Publicação automática no GitHub Pages
-
-O workflow `.github/workflows/webapp.yml` faz automaticamente:
-
-1. checkout do repositório;
-2. instalação com Node.js 22;
-3. `npm run build`;
-4. upload da pasta `dist`;
-5. publicação no GitHub Pages.
-
-### Primeira configuração no GitHub
-
-No repositório `RJP-PDF-Editor` abre:
-
-**Settings → Pages → Build and deployment → Source → GitHub Actions**
-
-Depois executa o workflow em **Actions → RJP PDF Editor - WebApp → Run workflow**, ou faz um novo push para `main`.
-
-A aplicação ficará normalmente disponível em:
-
-`https://ruijpedro.github.io/RJP-PDF-Editor/`
-
-## Desenvolvimento local
-
-```bash
-npm install
-npm run dev
-```
-
-## Build
-
-```bash
-npm run build
-```
+> Nota: o ditado do browser depende do suporte do navegador. O microfone do Gboard funciona independentemente da função de ditado interna da app, desde que esteja ativado no teclado Android.
