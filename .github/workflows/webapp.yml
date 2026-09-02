@@ -1,1 +1,37 @@
+name: RJP PDF Editor - WebApp
 
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  webapp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build WebApp
+        run: npm run build
+
+      - name: Upload WebApp artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RJP-PDF-Editor-WebApp
+          path: dist/
+          if-no-files-found: error
