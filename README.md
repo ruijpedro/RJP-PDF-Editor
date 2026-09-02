@@ -1,21 +1,38 @@
-# RJP PDF Editor V0.1
+# RJP PDF Editor — WebApp
 
-Webapp React/Vite para abrir PDFs localmente, associar uma password por ficheiro, adicionar texto e exportar uma cópia editada.
+WebApp para abrir um PDF localmente no browser, associar uma password ao ficheiro no dispositivo, adicionar texto e exportar um novo PDF.
 
-## Executar
+## Publicação automática no GitHub Pages
+
+O workflow `.github/workflows/webapp.yml` faz automaticamente:
+
+1. checkout do repositório;
+2. instalação com Node.js 22;
+3. `npm run build`;
+4. upload da pasta `dist`;
+5. publicação no GitHub Pages.
+
+### Primeira configuração no GitHub
+
+No repositório `RJP-PDF-Editor` abre:
+
+**Settings → Pages → Build and deployment → Source → GitHub Actions**
+
+Depois executa o workflow em **Actions → RJP PDF Editor - WebApp → Run workflow**, ou faz um novo push para `main`.
+
+A aplicação ficará normalmente disponível em:
+
+`https://ruijpedro.github.io/RJP-PDF-Editor/`
+
+## Desenvolvimento local
+
 ```bash
 npm install
 npm run dev
 ```
 
 ## Build
+
 ```bash
-npm install
 npm run build
 ```
-
-### Nota de segurança
-Nesta V0.1 a password é associada ao ficheiro dentro da aplicação/browser (hash SHA-256 no armazenamento local). Ela **não encripta ainda o PDF exportado**. Para proteção PDF AES real será necessário acrescentar um motor/serviço compatível com encriptação PDF.
-
-## GitHub Actions
-Inclui `.github/workflows/build.yml`. Em cada push para `main`/`master`, o GitHub instala Node.js 22, executa `npm install` e `npm run build`, e disponibiliza a pasta `dist` como artifact.
