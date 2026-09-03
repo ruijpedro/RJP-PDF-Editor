@@ -1,6 +1,9 @@
 import './style.css';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -17,6 +20,8 @@ const editor = {
   undo: [],
   selectedId: null,
   dirty: false,
+  native: Capacitor.isNativePlatform(),
+  platform: Capacitor.getPlatform(),
 };
 
 function uid(){ return crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`; }
@@ -50,7 +55,8 @@ function shell(){
       <span class="sep"></span>
       <button id="zoomOut">−</button><span id="zoomLabel">135%</span><button id="zoomIn">+</button>
       <span class="sep"></span>
-      <button id="saveBtn" class="primary" disabled>Guardar PDF</button>
+      <button id="saveBtn" class="primary" disabled>${editor.native?'Guardar / Partilhar':'Guardar PDF'}</button>
+      <button id="shareBtn" disabled>${editor.native?'Partilhar':'Partilhar'}</button>
       <button id="closeBtn" disabled>Fechar</button>
     </div>
   </header>
@@ -69,6 +75,7 @@ function bindUI(){
   document.querySelector('#zoomIn').onclick=()=>setZoom(editor.scale+0.15);
   document.querySelector('#zoomOut').onclick=()=>setZoom(editor.scale-0.15);
   document.querySelector('#saveBtn').onclick=savePdf;
+  document.querySelector('#shareBtn').onclick=shareCurrentPdf;
   document.querySelector('#closeBtn').onclick=closePdf;
   const ws=document.querySelector('#workspace');
   ['dragenter','dragover'].forEach(ev=>ws.addEventListener(ev,e=>{e.preventDefault();ws.classList.add('drag');}));
@@ -93,6 +100,7 @@ function updateChrome(){
   document.querySelector('#docName').textContent=editor.pdfBytes?`${editor.fileName}${editor.dirty?' • alterado':''}`:'Nenhum PDF aberto';
   document.querySelector('#saveBtn').disabled=!editor.pdfBytes;
   document.querySelector('#closeBtn').disabled=!editor.pdfBytes;
+  document.querySelector('#shareBtn').disabled=!editor.pdfBytes;
   document.querySelector('#deleteBtn').disabled=!editor.selectedId;
   document.querySelector('#zoomLabel').textContent=`${Math.round(editor.scale*100)}%`;
 }
@@ -109,7 +117,7 @@ async function loadPdf(bytes,name='documento.pdf',fresh=false){
     if(fresh){ editor.edits=[]; editor.undo=[]; editor.dirty=false; }
     editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise;
     updateChrome(); await renderAll(); persistSoon();
-    status(`PDF aberto: ${editor.pdfjs.numPages} página(s). Clica diretamente no texto para editar.`);
+    status(`PDF aberto: ${editor.pdfjs.numPages} página(s). ${editor.native?'No '+editor.platform+', usa Guardar / Partilhar para enviar para Ficheiros, iCloud Drive ou outras apps. ':''}Clica diretamente no texto para editar.`);
   }catch(e){ console.error(e); alert('Não foi possível abrir este PDF: '+e.message); status('Erro ao abrir PDF.'); }
 }
 
@@ -188,11 +196,56 @@ async function savePdf(){
       const text=e.kind==='check'?'X':String(e.text??''); if(!text)continue; const fs=clamp(Number(e.fontSize)||10,6,36); const maxWidth=Math.max(8,e.w-2); const lines=wrapText(text,font,fs,maxWidth); let yy=e.y+e.h-fs*1.05; for(const line of lines){ if(yy<e.y-fs*.2)break; p.drawText(line,{x:e.x+1,y:yy,size:fs,font,color:rgb(0,0,0)}); yy-=fs*1.18; }
     }
     const out=await doc.save(); editor.pdfBytes=new Uint8Array(out); editor.edits=[]; editor.undo=[]; editor.dirty=false; await dbSet('pdf',editor.pdfBytes); await dbSet('meta',{fileName:editor.fileName,edits:[],scale:editor.scale});
-    const blob=new Blob([out],{type:'application/pdf'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=editor.fileName.replace(/\.pdf$/i,'')+'_editado.pdf'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
-    editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise; await renderAll(); updateChrome(); status('PDF guardado. O documento continua aberto e podes continuar a editar.'); btn.textContent='Guardado ✓'; setTimeout(()=>btn.textContent=old,1500);
+    const savedName=editedFileName(editor.fileName);
+    if(editor.native){
+      await nativeSaveAndShare(out,savedName);
+    }else{
+      downloadBytes(out,savedName);
+    }
+    editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise; await renderAll(); updateChrome(); status(editor.native?'PDF guardado e folha de partilha aberta. O documento continua aberto.':'PDF guardado. O documento continua aberto e podes continuar a editar.'); btn.textContent='Guardado ✓'; setTimeout(()=>btn.textContent=old,1500);
   }catch(e){console.error(e);alert('Erro ao guardar PDF: '+e.message);status('Erro ao guardar.');}
   finally{btn.disabled=false;}
 }
+
+function editedFileName(name='documento.pdf'){
+  const base=String(name).replace(/\.pdf$/i,'').replace(/[\/:*?"<>|]+/g,'_').trim()||'documento';
+  return `${base}_editado.pdf`;
+}
+function bytesToBase64(bytes){
+  let binary=''; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));
+  return btoa(binary);
+}
+function downloadBytes(bytes,name){
+  const blob=new Blob([bytes],{type:'application/pdf'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+async function nativeFileUri(bytes,name){
+  const result=await Filesystem.writeFile({path:name,data:bytesToBase64(bytes),directory:Directory.Cache,recursive:true});
+  return result.uri;
+}
+async function nativeSaveAndShare(bytes,name){
+  const uri=await nativeFileUri(bytes,name);
+  await Share.share({title:'RJP PDF Editor',text:'PDF editado',files:[uri],dialogTitle:'Guardar ou partilhar PDF'});
+}
+async function shareCurrentPdf(){
+  if(!editor.pdfBytes)return;
+  try{
+    const name=editedFileName(editor.fileName);
+    if(editor.native){
+      await nativeSaveAndShare(editor.pdfBytes,name);
+      status('Folha de partilha aberta. Podes Guardar em Ficheiros, enviar por Mail, AirDrop, etc.');
+      return;
+    }
+    if(navigator.share){
+      const file=new File([editor.pdfBytes],name,{type:'application/pdf'});
+      if(!navigator.canShare || navigator.canShare({files:[file]})){
+        await navigator.share({title:'RJP PDF Editor',files:[file]}); return;
+      }
+    }
+    downloadBytes(editor.pdfBytes,name);
+  }catch(e){ if(e?.name!=='AbortError'){ console.error(e); alert('Não foi possível partilhar o PDF: '+e.message); } }
+}
+
 function wrapText(text,font,size,maxWidth){ const out=[]; for(const para of text.replace(/\r/g,'').split('\n')){ const words=para.split(/\s+/); let line=''; for(const w of words){ const test=line?line+' '+w:w; if(font.widthOfTextAtSize(test,size)<=maxWidth) line=test; else {if(line)out.push(line); line=w;} } out.push(line); } return out; }
 
 async function closePdf(){ if(editor.dirty&&!confirm('Há alterações ainda não guardadas no PDF. Fechar na mesma?'))return; editor.pdfBytes=null;editor.pdfjs=null;editor.edits=[];editor.undo=[];editor.selectedId=null;editor.dirty=false;await dbClear(); shell();bindUI();setMode('edit');updateChrome(); }
