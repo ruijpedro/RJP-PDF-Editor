@@ -1,4 +1,4 @@
-# RJP PDF Editor V2.0 - Ficha por defeito
+# RJP PDF Editor V2.1 - Ficha por defeito
 
 Projeto único para WebApp, Android e iOS.
 
@@ -17,3 +17,7 @@ Projeto único para WebApp, Android e iOS.
 - iOS: Capacitor / Xcode / TestFlight
 
 O mesmo PDF base está em `public/templates/`, por isso é empacotado no build Web, Android e iOS.
+
+
+## V2.1
+Ficha padrão corrigida: a página RGPD inicia no topo da página, sem o grande espaço em branco. O documento padrão passa de 7 para 6 páginas, mantendo os campos editáveis; os campos de consentimento e assinatura foram reposicionados na nova página 6.
