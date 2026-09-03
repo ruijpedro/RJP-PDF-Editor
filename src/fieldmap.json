@@ -884,8 +884,9 @@
       546.09536,
       258.62757
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 13,
+    "fontSize": 9.5
   },
   {
     "name": "p2_saude_sim",
@@ -1016,8 +1017,9 @@
       510.68919,
       656.47
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 4,
+    "fontSize": 9.5
   },
   {
     "name": "p2_atividade_sim",
@@ -1292,8 +1294,9 @@
       509.48899,
       407.44346
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 3,
+    "fontSize": 9.5
   },
   {
     "name": "p2_aptidoes",
@@ -1304,8 +1307,9 @@
       510.08909,
       339.63624
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 3,
+    "fontSize": 9.5
   },
   {
     "name": "p2_ensino_sim",
@@ -1520,8 +1524,9 @@
       509.48899,
       129.61383
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 3,
+    "fontSize": 9.5
   },
   {
     "name": "p3_rendimentos_sim",
@@ -2636,8 +2641,9 @@
       510.08909,
       155.41657
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 4,
+    "fontSize": 9.5
   },
   {
     "name": "p4_habitacao_sim",
@@ -2720,8 +2726,9 @@
       510.08909,
       703.87509
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 3,
+    "fontSize": 9.5
   },
   {
     "name": "p4_observacoes",
@@ -2732,8 +2739,9 @@
       510.08909,
       607.2648
     ],
-    "type": "textarea",
-    "multiline": true
+    "type": "linegroup",
+    "lines": 17,
+    "fontSize": 9.5
   },
   {
     "name": "p5_declarante_nome",

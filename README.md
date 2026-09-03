@@ -1,22 +1,20 @@
-# RJP PDF Editor V1.0 — Ficha base
+# RJP PDF Editor V1.1 - Campos por linha
 
-Esta versão usa a **Ficha de Atendimento** como documento-base real.
+Correção da Ficha de Atendimento para as zonas de Observações e restantes áreas pautadas.
 
-## O que faz
-- Abre automaticamente a ficha editável de 6 páginas.
-- Mostra o PDF real no browser com os campos sobrepostos na posição correta.
-- Permite preencher pelo documento ou pelo painel lateral.
-- Permite ditado por voz (`pt-PT`) quando o navegador suporta; no Android também funciona com o microfone do Gboard nos campos.
-- **Guardar** e **Guardar como…** preservam o conteúdo original: o PDF não é convertido em imagem nem reconstruído.
-- Os campos AcroForm são mantidos, portanto o PDF guardado pode ser reaberto no Adobe Reader ou novamente na WebApp e continuar a ser alterado.
-- Também permite abrir um PDF previamente guardado desta ficha e recuperar os valores.
+## Alteração principal
+As antigas caixas de texto grandes deixam de ser uma única textarea. A WebApp apresenta uma caixa de edição independente sobre cada linha impressa. No primeiro Guardar, o PDF é migrado automaticamente: o campo multilinha antigo é removido e são criados campos AcroForm individuais para cada linha.
+
+Isto permite:
+- escrever exatamente sobre cada linha;
+- manter o texto alinhado;
+- guardar e voltar a abrir o mesmo PDF;
+- continuar a editar linha a linha;
+- usar Guardar e Guardar como;
+- usar ditado do navegador/Gboard.
 
 ## GitHub Pages
-Em Settings → Pages, seleciona **GitHub Actions**.
-O workflow `.github/workflows/webapp.yml` compila com Node 22 e publica automaticamente.
+O workflow continua em `.github/workflows/webapp.yml` e usa Node 22.
 
-URL esperada:
-`https://ruijpedro.github.io/RJP-PDF-Editor/`
-
-## Importante
-Esta V1.0 resolve especificamente o fluxo da ficha-base. PDFs genéricos sem campos podem ser visualizados, mas a edição livre de texto interno continua em desenvolvimento.
+## Word
+A edição genérica de Word fica separada desta correção. Em GitHub Pages, `.docx` pode ser aberto no browser com conversão HTML; o antigo `.doc` binário não tem conversão fiável 100% client-side. Para a ficha fornecida, o PDF-base já está integrado e não depende do Word depois de criada a ficha.
