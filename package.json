@@ -1,22 +1,12 @@
 {
-  "name": "rjp-pdf-editor",
-  "version": "1.7.0",
+  "name": "rjp-pdf-editor-permanent",
   "private": true,
+  "version": "1.8.0",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
+  "scripts": {"dev":"vite","build":"vite build","preview":"vite preview"},
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.4.149",
-    "lucide-react": "^0.468.0"
+    "pdf-lib":"^1.17.1",
+    "pdfjs-dist":"^5.4.149"
   },
-  "devDependencies": {}
+  "devDependencies": {"vite":"^7.1.3"}
 }
