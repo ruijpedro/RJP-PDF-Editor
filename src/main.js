@@ -10,7 +10,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
 
-const DEFAULT_TEMPLATE_NAME = 'Ficha_atendimento_Patricia_PDF_PREENCHIVEL.pdf';
+const APP_SESSION_VERSION = '2.2-sem-espaco-rgpd';
+const DEFAULT_TEMPLATE_NAME = 'Ficha_atendimento_Patricia_PDF_PREENCHIVEL_SEM_ESPACO_RGPD.pdf';
 const DEFAULT_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/${DEFAULT_TEMPLATE_NAME}`;
 
 const editor = {
@@ -43,7 +44,7 @@ async function dbSet(key,val){ const db=await dbOpen(); return new Promise((res,
 async function dbGet(key){ const db=await dbOpen(); return new Promise((res,rej)=>{ const r=db.transaction('session').objectStore('session').get(key); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 async function dbClear(){ const db=await dbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction('session','readwrite'); tx.objectStore('session').clear(); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); }); }
 let persistTimer;
-function persistSoon(){ clearTimeout(persistTimer); persistTimer=setTimeout(async()=>{ try{ await dbSet('meta',{fileName:editor.fileName,edits:editor.edits,formValues:editor.formValues,scale:editor.scale}); if(editor.pdfBytes) await dbSet('pdf', editor.pdfBytes); }catch(e){console.warn('AutoSave',e);} },350); }
+function persistSoon(){ clearTimeout(persistTimer); persistTimer=setTimeout(async()=>{ try{ await dbSet('meta',{appSessionVersion:APP_SESSION_VERSION,fileName:editor.fileName,edits:editor.edits,formValues:editor.formValues,scale:editor.scale}); if(editor.pdfBytes) await dbSet('pdf', editor.pdfBytes); }catch(e){console.warn('AutoSave',e);} },350); }
 
 function shell(){
   app.innerHTML=`
@@ -264,7 +265,7 @@ async function savePdf(){
     for(const e of editor.edits){ const p=pages[e.page-1]; if(!p)continue; if(e.mask) p.drawRectangle({x:e.x-1,y:e.y-1,width:e.w+2,height:e.h+2,color:rgb(1,1,1),borderWidth:0});
       const text=e.kind==='check'?'X':String(e.text??''); if(!text)continue; const fs=clamp(Number(e.fontSize)||10,6,36); const maxWidth=Math.max(8,e.w-2); const lines=wrapText(text,font,fs,maxWidth); let yy=e.y+e.h-fs*1.05; for(const line of lines){ if(yy<e.y-fs*.2)break; p.drawText(line,{x:e.x+1,y:yy,size:fs,font,color:rgb(0,0,0)}); yy-=fs*1.18; }
     }
-    const out=await doc.save(); editor.pdfBytes=new Uint8Array(out); editor.edits=[]; editor.formValues={}; editor.undo=[]; editor.dirty=false; await dbSet('pdf',editor.pdfBytes); await dbSet('meta',{fileName:editor.fileName,edits:[],formValues:{},scale:editor.scale});
+    const out=await doc.save(); editor.pdfBytes=new Uint8Array(out); editor.edits=[]; editor.formValues={}; editor.undo=[]; editor.dirty=false; await dbSet('pdf',editor.pdfBytes); await dbSet('meta',{appSessionVersion:APP_SESSION_VERSION,fileName:editor.fileName,edits:[],formValues:{},scale:editor.scale});
     const savedName=editedFileName(editor.fileName);
     if(editor.native){
       await nativeSaveAndShare(out,savedName);
@@ -322,6 +323,12 @@ async function closePdf(){ if(editor.dirty&&!confirm('Há alterações ainda nã
 async function restore(){
   try{
     const meta=await dbGet('meta'), bytes=await dbGet('pdf');
+    // Invalida sessões de versões anteriores para nunca voltar a mostrar a ficha antiga.
+    if(meta?.appSessionVersion !== APP_SESSION_VERSION){
+      await dbClear();
+      await openDefaultTemplate(true);
+      return;
+    }
     if(bytes&&meta){ editor.edits=meta.edits||[]; editor.formValues=meta.formValues||{}; editor.scale=meta.scale||1.35; editor.dirty=editor.edits.length>0||Object.keys(editor.formValues).length>0; await loadPdf(bytes,meta.fileName||DEFAULT_TEMPLATE_NAME,false); status('Sessão anterior restaurada automaticamente.'); return; }
   }catch(e){console.warn(e);}
   await openDefaultTemplate(true);
