@@ -1,5 +1,5 @@
 import './style.css';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, PDFTextField, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -10,6 +10,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
 
+const DEFAULT_TEMPLATE_NAME = 'Ficha_atendimento_Patricia_PDF_PREENCHIVEL.pdf';
+const DEFAULT_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/${DEFAULT_TEMPLATE_NAME}`;
+
 const editor = {
   pdfBytes: null,
   pdfjs: null,
@@ -17,6 +20,7 @@ const editor = {
   scale: 1.35,
   mode: 'edit',
   edits: [],
+  formValues: {},
   undo: [],
   selectedId: null,
   dirty: false,
@@ -39,14 +43,15 @@ async function dbSet(key,val){ const db=await dbOpen(); return new Promise((res,
 async function dbGet(key){ const db=await dbOpen(); return new Promise((res,rej)=>{ const r=db.transaction('session').objectStore('session').get(key); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 async function dbClear(){ const db=await dbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction('session','readwrite'); tx.objectStore('session').clear(); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); }); }
 let persistTimer;
-function persistSoon(){ clearTimeout(persistTimer); persistTimer=setTimeout(async()=>{ try{ await dbSet('meta',{fileName:editor.fileName,edits:editor.edits,scale:editor.scale}); if(editor.pdfBytes) await dbSet('pdf', editor.pdfBytes); }catch(e){console.warn('AutoSave',e);} },350); }
+function persistSoon(){ clearTimeout(persistTimer); persistTimer=setTimeout(async()=>{ try{ await dbSet('meta',{fileName:editor.fileName,edits:editor.edits,formValues:editor.formValues,scale:editor.scale}); if(editor.pdfBytes) await dbSet('pdf', editor.pdfBytes); }catch(e){console.warn('AutoSave',e);} },350); }
 
 function shell(){
   app.innerHTML=`
   <header class="topbar">
     <div class="brand"><strong>RJP PDF Editor</strong><span id="docName">Nenhum PDF aberto</span></div>
     <div class="toolbar">
-      <label class="button primary">Abrir PDF<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
+      <button id="newFormBtn" class="primary">Nova ficha</button>
+      <label class="button">Abrir outro PDF<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
       <button id="editMode" class="active">Editar texto</button>
       <button id="addMode">Adicionar texto</button>
       <button id="checkMode">✓ Marcar</button>
@@ -57,15 +62,16 @@ function shell(){
       <span class="sep"></span>
       <button id="saveBtn" class="primary" disabled>${editor.native?'Guardar / Partilhar':'Guardar PDF'}</button>
       <button id="shareBtn" disabled>${editor.native?'Partilhar':'Partilhar'}</button>
-      <button id="closeBtn" disabled>Fechar</button>
+      <button id="closeBtn" disabled>Repor ficha</button>
     </div>
   </header>
-  <div id="status" class="status">Abre um PDF. O documento fica aberto enquanto trabalhas e as alterações são guardadas automaticamente na sessão.</div>
-  <main id="workspace" class="workspace empty"><div class="dropzone"><div class="dropicon">PDF</div><h2>Abre ou arrasta um PDF</h2><p>Edita texto diretamente, adiciona texto e mantém o documento aberto até guardares.</p></div></main>`;
+  <div id="status" class="status">A carregar a Ficha de Atendimento...</div>
+  <main id="workspace" class="workspace empty"><div class="dropzone"><div class="dropicon">PDF</div><h2>Ficha de Atendimento</h2><p>A ficha abre automaticamente e fica editável em Web, Android e iPhone/iPad.</p></div></main>`;
 }
 
 function bindUI(){
   const fileInput=document.querySelector('#fileInput');
+  document.querySelector('#newFormBtn').onclick=()=>openDefaultTemplate(true);
   fileInput.addEventListener('change',e=>e.target.files[0]&&openFile(e.target.files[0]));
   document.querySelector('#editMode').onclick=()=>setMode('edit');
   document.querySelector('#addMode').onclick=()=>setMode('add');
@@ -105,6 +111,21 @@ function updateChrome(){
   document.querySelector('#zoomLabel').textContent=`${Math.round(editor.scale*100)}%`;
 }
 
+async function openDefaultTemplate(fresh=true){
+  try{
+    status('A carregar a Ficha de Atendimento...');
+    const res=await fetch(DEFAULT_TEMPLATE_URL,{cache:'no-store'});
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const bytes=new Uint8Array(await res.arrayBuffer());
+    if(fresh) await dbClear();
+    await loadPdf(bytes,DEFAULT_TEMPLATE_NAME,fresh);
+    status('Ficha de Atendimento aberta. Preenche diretamente os campos; também podes editar/adicionar texto livre.');
+  }catch(e){
+    console.error('Template',e);
+    status('Não foi possível carregar a ficha por defeito. Usa “Abrir outro PDF”.');
+  }
+}
+
 async function openFile(file){
   const bytes=new Uint8Array(await file.arrayBuffer());
   await loadPdf(bytes,file.name,true);
@@ -114,7 +135,7 @@ async function loadPdf(bytes,name='documento.pdf',fresh=false){
     status('A abrir PDF…');
     editor.pdfBytes=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
     editor.fileName=name;
-    if(fresh){ editor.edits=[]; editor.undo=[]; editor.dirty=false; }
+    if(fresh){ editor.edits=[]; editor.formValues={}; editor.undo=[]; editor.dirty=false; }
     editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise;
     updateChrome(); await renderAll(); persistSoon();
     status(`PDF aberto: ${editor.pdfjs.numPages} página(s). ${editor.native?'No '+editor.platform+', usa Guardar / Partilhar para enviar para Ficheiros, iCloud Drive ou outras apps. ':''}Clica diretamente no texto para editar.`);
@@ -131,8 +152,10 @@ async function renderPage(pageNum,ws){
   const section=document.createElement('section'); section.className='pdf-page'; section.dataset.page=pageNum;
   section.style.width=`${viewport.width}px`; section.style.height=`${viewport.height}px`;
   const canvas=document.createElement('canvas'); canvas.width=Math.ceil(viewport.width*devicePixelRatio); canvas.height=Math.ceil(viewport.height*devicePixelRatio); canvas.style.width=`${viewport.width}px`; canvas.style.height=`${viewport.height}px`;
-  const ctx=canvas.getContext('2d'); await pdfPage.render({canvasContext:ctx, viewport, transform:devicePixelRatio!==1?[devicePixelRatio,0,0,devicePixelRatio,0,0]:null}).promise;
+  const ctx=canvas.getContext('2d'); await pdfPage.render({canvasContext:ctx, viewport, transform:devicePixelRatio!==1?[devicePixelRatio,0,0,devicePixelRatio,0,0]:null, annotationMode: pdfjsLib.AnnotationMode?.DISABLE ?? 0}).promise;
   section.appendChild(canvas);
+  const formLayer=document.createElement('div'); formLayer.className='form-layer'; section.appendChild(formLayer);
+  await renderFormFields(pdfPage,pageNum,viewport,formLayer);
   const textLayer=document.createElement('div'); textLayer.className='text-hit-layer'; section.appendChild(textLayer);
   try{
     const tc=await pdfPage.getTextContent();
@@ -146,6 +169,39 @@ async function renderPage(pageNum,ws){
   const editLayer=document.createElement('div'); editLayer.className='edit-layer'; section.appendChild(editLayer);
   section.addEventListener('click',ev=>{ if(ev.target!==section&&ev.target!==canvas&&ev.target!==editLayer) return; const r=section.getBoundingClientRect(); const x=ev.clientX-r.left,y=ev.clientY-r.top; if(editor.mode==='add') addTextAt(pageNum,viewport,x,y); else if(editor.mode==='check') addCheckAt(pageNum,viewport,x,y); else selectEdit(null); });
   renderEditsForPage(pageNum,viewport,editLayer); ws.appendChild(section);
+}
+
+async function renderFormFields(pdfPage,pageNum,viewport,layer){
+  let annotations=[];
+  try{ annotations=await pdfPage.getAnnotations({intent:'display'}); }catch(e){ console.warn('Form annotations',e); return; }
+  for(const ann of annotations){
+    if(ann.subtype!=='Widget' || !ann.fieldName || !ann.rect) continue;
+    const rect=viewport.convertToViewportRectangle(ann.rect);
+    const left=Math.min(rect[0],rect[2]), top=Math.min(rect[1],rect[3]);
+    const width=Math.max(8,Math.abs(rect[2]-rect[0])), height=Math.max(8,Math.abs(rect[3]-rect[1]));
+    const current=Object.prototype.hasOwnProperty.call(editor.formValues,ann.fieldName)?editor.formValues[ann.fieldName]:ann.fieldValue;
+    let el;
+    if(ann.fieldType==='Btn' && (ann.checkBox || (!ann.radioButton && !ann.pushButton))){
+      el=document.createElement('input'); el.type='checkbox'; el.className='pdf-form-checkbox';
+      el.checked=current===true || (current && current!=='Off' && current!=='/Off');
+      el.addEventListener('change',()=>{editor.formValues[ann.fieldName]=el.checked; markDirty();});
+    }else if(ann.fieldType==='Tx'){
+      el=ann.multiLine?document.createElement('textarea'):document.createElement('input');
+      if(el.tagName==='INPUT') el.type='text';
+      el.className='pdf-form-text'; el.value=(current??'').toString().replace(/^None$/,'');
+      el.spellcheck=false;
+      el.addEventListener('input',()=>{editor.formValues[ann.fieldName]=el.value; markDirty();});
+    }else if(ann.fieldType==='Ch'){
+      el=document.createElement('select'); el.className='pdf-form-select';
+      const options=ann.options||[];
+      for(const opt of options){ const o=document.createElement('option'); const val=typeof opt==='string'?opt:(opt.exportValue??opt.displayValue??''); o.value=val; o.textContent=typeof opt==='string'?opt:(opt.displayValue??opt.exportValue??''); el.appendChild(o); }
+      el.value=(current??'').toString(); el.addEventListener('change',()=>{editor.formValues[ann.fieldName]=el.value; markDirty();});
+    }else continue;
+    el.dataset.field=ann.fieldName; el.title=ann.alternativeText||ann.fieldName;
+    Object.assign(el.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`});
+    if(ann.fieldType==='Tx') el.style.fontSize=`${Math.max(8,Math.min(16,height*.58))}px`;
+    layer.appendChild(el);
+  }
 }
 
 function viewportRectToPdf(viewport,x,y,w,h){
@@ -191,11 +247,24 @@ async function setZoom(v){ editor.scale=clamp(v,.65,2.5); updateChrome(); if(edi
 async function savePdf(){
   if(!editor.pdfBytes)return; const btn=document.querySelector('#saveBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='A guardar…';
   try{
-    const doc=await PDFDocument.load(editor.pdfBytes,{ignoreEncryption:false}); const font=await doc.embedFont(StandardFonts.Helvetica); const pages=doc.getPages();
+    const doc=await PDFDocument.load(editor.pdfBytes,{ignoreEncryption:false});
+    const form=doc.getForm();
+    const font=await doc.embedFont(StandardFonts.Helvetica);
+    for(const [name,value] of Object.entries(editor.formValues)){
+      const field=form.getFieldMaybe(name); if(!field) continue;
+      try{
+        if(field instanceof PDFTextField) field.setText(String(value??''));
+        else if(field instanceof PDFCheckBox) value?field.check():field.uncheck();
+        else if(field instanceof PDFDropdown || field instanceof PDFOptionList) field.select(String(value??''));
+        else if(field instanceof PDFRadioGroup && value) field.select(String(value));
+      }catch(err){ console.warn('Campo PDF',name,err); }
+    }
+    try{ form.updateFieldAppearances(font); }catch(e){ console.warn('Appearances',e); }
+    const pages=doc.getPages();
     for(const e of editor.edits){ const p=pages[e.page-1]; if(!p)continue; if(e.mask) p.drawRectangle({x:e.x-1,y:e.y-1,width:e.w+2,height:e.h+2,color:rgb(1,1,1),borderWidth:0});
       const text=e.kind==='check'?'X':String(e.text??''); if(!text)continue; const fs=clamp(Number(e.fontSize)||10,6,36); const maxWidth=Math.max(8,e.w-2); const lines=wrapText(text,font,fs,maxWidth); let yy=e.y+e.h-fs*1.05; for(const line of lines){ if(yy<e.y-fs*.2)break; p.drawText(line,{x:e.x+1,y:yy,size:fs,font,color:rgb(0,0,0)}); yy-=fs*1.18; }
     }
-    const out=await doc.save(); editor.pdfBytes=new Uint8Array(out); editor.edits=[]; editor.undo=[]; editor.dirty=false; await dbSet('pdf',editor.pdfBytes); await dbSet('meta',{fileName:editor.fileName,edits:[],scale:editor.scale});
+    const out=await doc.save(); editor.pdfBytes=new Uint8Array(out); editor.edits=[]; editor.formValues={}; editor.undo=[]; editor.dirty=false; await dbSet('pdf',editor.pdfBytes); await dbSet('meta',{fileName:editor.fileName,edits:[],formValues:{},scale:editor.scale});
     const savedName=editedFileName(editor.fileName);
     if(editor.native){
       await nativeSaveAndShare(out,savedName);
@@ -209,7 +278,7 @@ async function savePdf(){
 
 function editedFileName(name='documento.pdf'){
   const base=String(name).replace(/\.pdf$/i,'').replace(/[\/:*?"<>|]+/g,'_').trim()||'documento';
-  return `${base}_editado.pdf`;
+  return `${base}_preenchido.pdf`;
 }
 function bytesToBase64(bytes){
   let binary=''; const chunk=0x8000;
@@ -248,10 +317,14 @@ async function shareCurrentPdf(){
 
 function wrapText(text,font,size,maxWidth){ const out=[]; for(const para of text.replace(/\r/g,'').split('\n')){ const words=para.split(/\s+/); let line=''; for(const w of words){ const test=line?line+' '+w:w; if(font.widthOfTextAtSize(test,size)<=maxWidth) line=test; else {if(line)out.push(line); line=w;} } out.push(line); } return out; }
 
-async function closePdf(){ if(editor.dirty&&!confirm('Há alterações ainda não guardadas no PDF. Fechar na mesma?'))return; editor.pdfBytes=null;editor.pdfjs=null;editor.edits=[];editor.undo=[];editor.selectedId=null;editor.dirty=false;await dbClear(); shell();bindUI();setMode('edit');updateChrome(); }
+async function closePdf(){ if(editor.dirty&&!confirm('Há alterações ainda não guardadas no PDF. Repor a ficha na mesma?'))return; editor.pdfBytes=null;editor.pdfjs=null;editor.edits=[];editor.formValues={};editor.undo=[];editor.selectedId=null;editor.dirty=false;await dbClear(); updateChrome(); await openDefaultTemplate(true); }
 
 async function restore(){
-  try{ const meta=await dbGet('meta'), bytes=await dbGet('pdf'); if(bytes&&meta){ editor.edits=meta.edits||[]; editor.scale=meta.scale||1.35; editor.dirty=editor.edits.length>0; await loadPdf(bytes,meta.fileName||'documento.pdf',false); status('Sessão anterior restaurada automaticamente.'); } }catch(e){console.warn(e);}
+  try{
+    const meta=await dbGet('meta'), bytes=await dbGet('pdf');
+    if(bytes&&meta){ editor.edits=meta.edits||[]; editor.formValues=meta.formValues||{}; editor.scale=meta.scale||1.35; editor.dirty=editor.edits.length>0||Object.keys(editor.formValues).length>0; await loadPdf(bytes,meta.fileName||DEFAULT_TEMPLATE_NAME,false); status('Sessão anterior restaurada automaticamente.'); return; }
+  }catch(e){console.warn(e);}
+  await openDefaultTemplate(true);
 }
 
 shell(); bindUI(); setMode('edit'); updateChrome(); restore();
