@@ -1,259 +1,32 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+import React,{useEffect,useRef,useState} from 'react';
+import {createRoot} from 'react-dom/client';
 import * as pdfjsLib from 'pdfjs-dist';
-import { PDFDocument, PDFTextField, PDFCheckBox } from 'pdf-lib';
-import { FileUp, Save, Download, RotateCcw, FileText, Mic, Search, ChevronLeft, ChevronRight } from 'lucide-react';
-import fieldMap from './fieldmap.json';
+import {PDFDocument,PDFTextField,PDFCheckBox} from 'pdf-lib';
+import {FileUp,Save,Download,RotateCcw,Type,Trash2,ChevronLeft,ChevronRight,Mic} from 'lucide-react';
 import './style.css';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
-
-const TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/Ficha_Atendimento_EDITAVEL_RJP.pdf`;
-
-function groupTitle(page){
-  return ({1:'Identificação e agregado familiar',2:'Saúde, trabalho e situação escolar',3:'Situação económica',4:'Habitação e observações',5:'RGPD e consentimento',6:'Consentimento e assinatura'})[page] || `Página ${page}`;
-}
-
-function lineKey(base, index){ return `${base}__L${index + 1}`; }
-
+pdfjsLib.GlobalWorkerOptions.workerSrc=new URL('pdfjs-dist/build/pdf.worker.min.mjs',import.meta.url).toString();
+const TEMPLATE_URL=`${import.meta.env.BASE_URL}templates/Ficha_Atendimento_EDITAVEL_RJP.pdf`;
+const RJP='RJP_EDIT_';
 function App(){
-  const [sourceBytes,setSourceBytes] = useState(null);
-  const [fileName,setFileName] = useState('Ficha_Atendimento_RJP.pdf');
-  const [pdfJs,setPdfJs] = useState(null);
-  const [values,setValues] = useState({});
-  const [page,setPage] = useState(1);
-  const [scale,setScale] = useState(1.35);
-  const [status,setStatus] = useState('A carregar ficha base…');
-  const [query,setQuery] = useState('');
-  const canvasRef=useRef(null);
-  const [viewport,setViewport] = useState(null);
-
-  const pageFields=useMemo(()=>fieldMap.filter(f=>f.page===page && (!query || f.name.toLowerCase().includes(query.toLowerCase()))),[page,query]);
-
-  useEffect(()=>{ loadTemplate(); },[]);
-  useEffect(()=>{ if(pdfJs) renderPage(); },[pdfJs,page,scale]);
-
-  async function loadTemplate(){
-    const b = new Uint8Array(await (await fetch(TEMPLATE_URL)).arrayBuffer());
-    await loadBytes(b,'Ficha_Atendimento_RJP.pdf');
-  }
-
-  async function loadBytes(bytes,name){
-    try{
-      setStatus('A abrir PDF…');
-      const safe = new Uint8Array(bytes);
-      const task = pdfjsLib.getDocument({data:safe.slice()});
-      const doc = await task.promise;
-      setPdfJs(doc);
-      setSourceBytes(safe);
-      setFileName(name.replace(/\.pdf$/i,'')+'.pdf');
-      setPage(1);
-      await readFormValues(safe);
-      setStatus(`PDF aberto — ${doc.numPages} páginas. As zonas com linhas são editadas linha a linha.`);
-    }catch(e){
-      console.error(e); setStatus('Não foi possível abrir este PDF.');
-    }
-  }
-
-  async function readFormValues(bytes){
-    const doc=await PDFDocument.load(bytes,{ignoreEncryption:true});
-    const form=doc.getForm();
-    const raw={};
-    for(const field of form.getFields()){
-      const n=field.getName();
-      try{
-        if(field instanceof PDFTextField) raw[n]=field.getText()||'';
-        else if(field instanceof PDFCheckBox) raw[n]=field.isChecked();
-      }catch{}
-    }
-
-    const next={...raw};
-    for(const f of fieldMap.filter(x=>x.type==='linegroup')){
-      const existing=[];
-      let hasLineFields=false;
-      for(let i=0;i<f.lines;i++){
-        const k=lineKey(f.name,i);
-        if(k in raw){ hasLineFields=true; existing[i]=raw[k]||''; }
-      }
-      if(!hasLineFields){
-        const old=String(raw[f.name]||'').split(/\r?\n/);
-        for(let i=0;i<f.lines;i++) existing[i]=old[i]||'';
-      }
-      for(let i=0;i<f.lines;i++) next[lineKey(f.name,i)]=existing[i]||'';
-    }
-    setValues(next);
-  }
-
-  async function renderPage(){
-    const p=await pdfJs.getPage(page);
-    const vp=p.getViewport({scale});
-    setViewport(vp);
-    const c=canvasRef.current; if(!c)return;
-    c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
-    c.style.width=`${vp.width}px`; c.style.height=`${vp.height}px`;
-    await p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
-  }
-
-  function rectStyle(f){
-    if(!viewport) return {};
-    const [x1,y1,x2,y2]=f.rect;
-    const s=viewport.scale;
-    return {left:x1*s, top:(viewport.height-y2*s), width:(x2-x1)*s, height:(y2-y1)*s};
-  }
-
-  function lineRects(f){
-    const [x1,y1,x2,y2]=f.rect;
-    const slot=(y2-y1)/f.lines;
-    return Array.from({length:f.lines},(_,i)=>{
-      const topY=y2-i*slot;
-      const h=Math.min(slot*0.80, 14.5);
-      const yy=topY-slot+(slot-h)/2+1.0;
-      return [x1,yy,x2,yy+h];
-    });
-  }
-
-  function lineStyle(f,index){
-    if(!viewport) return {};
-    const [x1,y1,x2,y2]=lineRects(f)[index];
-    const s=viewport.scale;
-    return {left:x1*s, top:(viewport.height-y2*s), width:(x2-x1)*s, height:(y2-y1)*s};
-  }
-
-  function update(name,val){ setValues(v=>({...v,[name]:val})); }
-
-  async function migrateLineGroups(doc,form){
-    const pages=doc.getPages();
-    const names=new Set(form.getFields().map(x=>x.getName()));
-    for(const f of fieldMap.filter(x=>x.type==='linegroup')){
-      if(names.has(f.name)){
-        try{ form.removeField(form.getField(f.name)); names.delete(f.name); }catch{}
-      }
-      const rects=lineRects(f);
-      for(let i=0;i<f.lines;i++){
-        const n=lineKey(f.name,i);
-        let tf;
-        if(names.has(n)){
-          try{ tf=form.getTextField(n); }catch{ tf=null; }
-        }
-        if(!tf){
-          tf=form.createTextField(n);
-          const [x1,y1,x2,y2]=rects[i];
-          tf.addToPage(pages[f.page-1],{x:x1,y:y1,width:x2-x1,height:y2-y1,borderWidth:0});
-          names.add(n);
-        }
-        try{ tf.setFontSize(f.fontSize||9.5); }catch{}
-        tf.setText(String(values[n]??''));
-      }
-    }
-  }
-
-  async function savePdf(saveAs=false){
-    if(!sourceBytes)return;
-    try{
-      setStatus('A guardar PDF e a converter observações para campos de linha…');
-      const doc=await PDFDocument.load(sourceBytes.slice(),{ignoreEncryption:true});
-      const form=doc.getForm();
-
-      await migrateLineGroups(doc,form);
-
-      for(const field of form.getFields()){
-        const n=field.getName();
-        if(!(n in values)) continue;
-        try{
-          if(field instanceof PDFTextField) field.setText(String(values[n] ?? ''));
-          else if(field instanceof PDFCheckBox){ values[n] ? field.check() : field.uncheck(); }
-        }catch(e){ console.warn('Campo',n,e); }
-      }
-
-      const out=await doc.save({useObjectStreams:false,addDefaultPage:false,updateFieldAppearances:true});
-      const blob=new Blob([out],{type:'application/pdf'});
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-      let n=fileName;
-      if(saveAs){
-        const asked=window.prompt('Nome do novo PDF:',fileName.replace(/\.pdf$/i,'')+'_novo.pdf');
-        if(!asked){setStatus('Guardar como cancelado.');return;}
-        n=asked.toLowerCase().endsWith('.pdf')?asked:asked+'.pdf';
-      }
-      a.download=n; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-      setSourceBytes(new Uint8Array(out));
-      setFileName(n);
-      setStatus('Guardado. As observações ficaram divididas em linhas editáveis independentes.');
-    }catch(e){ console.error(e); setStatus(`Erro ao guardar o PDF: ${e?.message||e}`); }
-  }
-
-  async function onOpen(e){
-    const f=e.target.files?.[0]; if(!f)return;
-    const b=new Uint8Array(await f.arrayBuffer());
-    await loadBytes(b,f.name);
-    e.target.value='';
-  }
-
-  function dictate(name){
-    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(!SR){ setStatus('Neste navegador usa o microfone do Gboard/teclado no próprio campo.'); return; }
-    const r=new SR(); r.lang='pt-PT'; r.interimResults=false; r.maxAlternatives=1;
-    r.onresult=e=>update(name,(values[name]||'')+(values[name]?' ':'')+e.results[0][0].transcript);
-    r.onerror=()=>setStatus('Não foi possível usar o ditado do navegador. Podes usar o microfone do Gboard.');
-    r.start();
-  }
-
-  function renderSideField(f){
-    if(f.type==='checkbox') return <input type="checkbox" checked={!!values[f.name]} onChange={e=>update(f.name,e.target.checked)}/>;
-    if(f.type==='linegroup') return <div className="lineGroupSide">{Array.from({length:f.lines},(_,i)=>{
-      const k=lineKey(f.name,i);
-      return <div className="textCtl" key={k}><input placeholder={`Linha ${i+1}`} value={values[k]||''} onChange={e=>update(k,e.target.value)}/><button title="Ditar" onClick={()=>dictate(k)}><Mic size={14}/></button></div>;
-    })}</div>;
-    return <div className="textCtl"><input value={values[f.name]||''} onChange={e=>update(f.name,e.target.value)}/><button title="Ditar" onClick={()=>dictate(f.name)}><Mic size={14}/></button></div>;
-  }
-
-  return <div className="app">
-    <header>
-      <div className="brand"><div className="logo">RJP</div><div><strong>PDF Editor</strong><small>Ficha de Atendimento — campos alinhados por linha</small></div></div>
-      <div className="actions">
-        <label className="btn secondary"><FileUp size={17}/> Abrir PDF<input type="file" accept="application/pdf" onChange={onOpen}/></label>
-        <button className="btn secondary" onClick={loadTemplate}><RotateCcw size={17}/> Nova ficha</button>
-        <button className="btn" onClick={()=>savePdf(false)}><Save size={17}/> Guardar</button>
-        <button className="btn" onClick={()=>savePdf(true)}><Download size={17}/> Guardar como…</button>
-      </div>
-    </header>
-
-    <div className="status"><FileText size={15}/><span>{status}</span></div>
-
-    <main>
-      <aside>
-        <div className="sideTitle">Campos — página {page}</div>
-        <div className="search"><Search size={15}/><input placeholder="Procurar campo…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
-        <h3>{groupTitle(page)}</h3>
-        <div className="fieldList">
-          {pageFields.map(f=><div className="fieldRow" key={f.name}><label>{humanize(f.name)}</label>{renderSideField(f)}</div>)}
-        </div>
-      </aside>
-
-      <section className="viewer">
-        <div className="pager">
-          <button disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft/></button>
-          <span>Página <b>{page}</b> / {pdfJs?.numPages||6}</span>
-          <button disabled={!pdfJs || page>=pdfJs.numPages} onClick={()=>setPage(p=>p+1)}><ChevronRight/></button>
-          <select value={scale} onChange={e=>setScale(Number(e.target.value))}><option value="1">100%</option><option value="1.2">120%</option><option value="1.35">135%</option><option value="1.6">160%</option></select>
-        </div>
-        <div className="paper" style={viewport?{width:viewport.width,height:viewport.height}:undefined}>
-          <canvas ref={canvasRef}/>
-          {viewport && fieldMap.filter(f=>f.page===page).flatMap(f=>{
-            if(f.type==='checkbox') return [<input key={f.name} className="overlayCheck" style={rectStyle(f)} type="checkbox" checked={!!values[f.name]} onChange={e=>update(f.name,e.target.checked)}/>];
-            if(f.type==='linegroup') return Array.from({length:f.lines},(_,i)=>{
-              const k=lineKey(f.name,i);
-              return <input key={k} className="overlayInput overlayLine" style={lineStyle(f,i)} value={values[k]||''} onChange={e=>update(k,e.target.value)} />;
-            });
-            return [<input key={f.name} className="overlayInput" style={rectStyle(f)} value={values[f.name]||''} onChange={e=>update(f.name,e.target.value)} />];
-          })}
-        </div>
-      </section>
-    </main>
-  </div>
-}
-
-function humanize(n){
-  return n.replace(/^p\d+_/,'').replace(/_/g,' ').replace(/\br(\d+) c(\d+)\b/i,'linha $1 · coluna $2').replace(/\b\w/g,m=>m.toUpperCase());
-}
-
+ const [bytes,setBytes]=useState(null),[name,setName]=useState('documento.pdf'),[docjs,setDocjs]=useState(null),[page,setPage]=useState(1),[scale,setScale]=useState(1.35),[vp,setVp]=useState(null),[fields,setFields]=useState([]),[values,setValues]=useState({}),[addMode,setAddMode]=useState(false),[selected,setSelected]=useState(null),[status,setStatus]=useState('A carregar ficha base…');
+ const canvas=useRef(null);
+ useEffect(()=>{loadTemplate()},[]); useEffect(()=>{if(docjs)render()},[docjs,page,scale]);
+ async function loadTemplate(){const b=new Uint8Array(await(await fetch(TEMPLATE_URL)).arrayBuffer());await load(b,'Ficha_Atendimento_RJP.pdf')}
+ async function load(b,n){try{setStatus('A abrir PDF real…');const safe=new Uint8Array(b);const d=await pdfjsLib.getDocument({data:safe.slice()}).promise;setDocjs(d);setBytes(safe);setName(n);setPage(1);await readFields(safe);setStatus(`PDF aberto: ${d.numPages} páginas. Podes editar campos e adicionar novos textos.`)}catch(e){console.error(e);setStatus('Erro ao abrir PDF.') }}
+ async function readFields(b){const d=await PDFDocument.load(b,{ignoreEncryption:true});const form=d.getForm();const arr=[],vals={};for(const f of form.getFields()){const fn=f.getName();try{if(f instanceof PDFTextField)vals[fn]=f.getText()||'';else if(f instanceof PDFCheckBox)vals[fn]=f.isChecked()}catch{};try{for(const w of f.acroField.getWidgets()){const r=w.getRectangle();const pref=w.P()?.asNumber?.();let pi=0;if(pref){const ps=d.getPages();pi=ps.findIndex(p=>p.ref.objectNumber===pref)}if(pi<0)pi=0;arr.push({name:fn,type:f instanceof PDFCheckBox?'checkbox':'text',page:pi+1,rect:[r.x,r.y,r.x+r.width,r.y+r.height],rjp:fn.startsWith(RJP)})}}catch{}}
+ setFields(arr);setValues(vals)}
+ async function render(){const p=await docjs.getPage(page),v=p.getViewport({scale});setVp(v);const c=canvas.current;if(!c)return;c.width=Math.ceil(v.width);c.height=Math.ceil(v.height);c.style.width=v.width+'px';c.style.height=v.height+'px';await p.render({canvasContext:c.getContext('2d'),viewport:v}).promise}
+ const style=f=>{if(!vp)return{};const[x1,y1,x2,y2]=f.rect,s=vp.scale;return{left:x1*s,top:vp.height-y2*s,width:(x2-x1)*s,height:(y2-y1)*s}};
+ function upd(k,v){setValues(x=>({...x,[k]:v}))}
+ function clickPaper(e){if(!addMode||!vp)return;const r=e.currentTarget.getBoundingClientRect(),x=(e.clientX-r.left)/vp.scale,y=(vp.height-(e.clientY-r.top))/vp.scale;const fn=RJP+Date.now();const f={name:fn,type:'text',page,rect:[x,y-4,x+180,y+15],rjp:true};setFields(a=>[...a,f]);setValues(v=>({...v,[fn]:''}));setSelected(fn);setAddMode(false);setStatus('Novo campo criado. Escreve o texto e podes voltar a editar depois de guardar.')}
+ function removeSelected(){if(!selected)return;setFields(a=>a.filter(f=>f.name!==selected));setValues(v=>{const n={...v};delete n[selected];return n});setSelected(null)}
+ async function save(as=false){try{setStatus('A guardar sobre o PDF original, sem rasterizar páginas…');const d=await PDFDocument.load(bytes.slice(),{ignoreEncryption:true});const form=d.getForm(),pages=d.getPages(),existing=new Set(form.getFields().map(f=>f.getName()));
+ // remove RJP fields deleted in UI
+ for(const f of form.getFields()){if(f.getName().startsWith(RJP)&&!fields.some(x=>x.name===f.getName()))try{form.removeField(f)}catch{}}
+ for(const f of fields){let fld;try{fld=form.getField(f.name)}catch{};if(!fld&&f.rjp){fld=form.createTextField(f.name);const[x1,y1,x2,y2]=f.rect;fld.addToPage(pages[f.page-1],{x:x1,y:y1,width:x2-x1,height:y2-y1,borderWidth:0});try{fld.setFontSize(10)}catch{}}
+ if(!fld)continue;try{if(fld instanceof PDFTextField)fld.setText(String(values[f.name]??''));else if(fld instanceof PDFCheckBox){values[f.name]?fld.check():fld.uncheck()}}catch{}}
+ const out=await d.save({useObjectStreams:false,updateFieldAppearances:true});let nn=name;if(as){const q=prompt('Nome do novo PDF:',name.replace(/\.pdf$/i,'')+'_editado.pdf');if(!q){setStatus('Cancelado.');return}nn=q.toLowerCase().endsWith('.pdf')?q:q+'.pdf'}const blob=new Blob([out],{type:'application/pdf'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nn;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);setBytes(new Uint8Array(out));setName(nn);await readFields(new Uint8Array(out));setStatus('PDF guardado. O conteúdo original foi preservado e os campos RJP continuam editáveis.')}catch(e){console.error(e);setStatus('Erro ao guardar: '+(e.message||e))}}
+ async function openFile(e){const f=e.target.files?.[0];if(f){await load(new Uint8Array(await f.arrayBuffer()),f.name);e.target.value=''}}
+ function dictate(k){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){setStatus('Usa o microfone do Gboard/teclado neste campo.');return}const r=new SR();r.lang='pt-PT';r.onresult=e=>upd(k,(values[k]||'')+(values[k]?' ':'')+e.results[0][0].transcript);r.start()}
+ return <div className="app"><header><div className="brand"><div className="logo">RJP</div><div><strong>PDF Editor</strong><small>V1.2 — edição persistente do próprio PDF</small></div></div><div className="actions"><label className="btn secondary"><FileUp size={17}/> Abrir PDF<input type="file" accept="application/pdf" onChange={openFile}/></label><button className="btn secondary" onClick={loadTemplate}><RotateCcw size={17}/> Ficha base</button><button className={'btn secondary '+(addMode?'active':'')} onClick={()=>setAddMode(x=>!x)}><Type size={17}/> Adicionar texto</button><button className="btn secondary" disabled={!selected} onClick={removeSelected}><Trash2 size={17}/> Apagar campo</button><button className="btn" onClick={()=>save(false)}><Save size={17}/> Guardar</button><button className="btn" onClick={()=>save(true)}><Download size={17}/> Guardar como…</button></div></header><div className="status">{status}</div><main><aside><div className="sideTitle">Campos editáveis — pág. {page}</div><div className="fieldList">{fields.filter(f=>f.page===page).map((f,i)=><div className={'fieldRow '+(selected===f.name?'sel':'')} key={f.name} onClick={()=>setSelected(f.name)}><label>{f.rjp?'Texto RJP '+(i+1):f.name}</label>{f.type==='checkbox'?<input type="checkbox" checked={!!values[f.name]} onChange={e=>upd(f.name,e.target.checked)}/>:<div className="textCtl"><input value={values[f.name]||''} onChange={e=>upd(f.name,e.target.value)}/><button onClick={()=>dictate(f.name)}><Mic size={14}/></button></div>}</div>)}</div></aside><section className="viewer"><div className="pager"><button disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft/></button><span>Página <b>{page}</b> / {docjs?.numPages||1}</span><button disabled={!docjs||page>=docjs.numPages} onClick={()=>setPage(p=>p+1)}><ChevronRight/></button><select value={scale} onChange={e=>setScale(+e.target.value)}><option value="1">100%</option><option value="1.2">120%</option><option value="1.35">135%</option><option value="1.6">160%</option></select></div><div className={'paper '+(addMode?'addMode':'')} style={vp?{width:vp.width,height:vp.height}:undefined} onClick={clickPaper}><canvas ref={canvas}/>{vp&&fields.filter(f=>f.page===page).map(f=>f.type==='checkbox'?<input key={f.name} className="overlayCheck" style={style(f)} type="checkbox" checked={!!values[f.name]} onClick={e=>e.stopPropagation()} onChange={e=>upd(f.name,e.target.checked)}/>:<input key={f.name} className={'overlayInput '+(selected===f.name?'selected':'')} style={style(f)} value={values[f.name]||''} onClick={e=>{e.stopPropagation();setSelected(f.name)}} onChange={e=>upd(f.name,e.target.value)}/>)}</div></section></main></div>}
 createRoot(document.getElementById('root')).render(<App/>);
