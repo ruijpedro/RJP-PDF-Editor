@@ -7,37 +7,60 @@ import mammoth from 'mammoth';
 import html2pdf from 'html2pdf.js';
 import {
   FileText, FileType2, Upload, Download, Lock, Unlock, MousePointer2,
-  Type, Save, Trash2, ChevronLeft, ChevronRight, RotateCcw, Info, Mic, MicOff
+  Type, Save, Trash2, ChevronLeft, ChevronRight, Info, Mic, MicOff, BadgeCheck
 } from 'lucide-react';
 import './style.css';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const SCALE = 1.35;
+const PROJECT_FILE = 'rjp-editable.json';
+const BASE_FILE = 'rjp-base.pdf';
+const PROJECT_MAGIC = 'RJP_PDF_EDITOR_PROJECT';
+const PROJECT_VERSION = 1;
 
-async function sha256(text) {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+const cloneBytes = (bytes) => Uint8Array.from(bytes || []);
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+function bytesFromAttachment(att) {
+  if (!att?.content) return null;
+  return att.content instanceof Uint8Array ? cloneBytes(att.content) : new Uint8Array(att.content);
 }
 
-async function fileKey(file) {
-  return `rjp-lock:${await sha256(`${file.name}|${file.size}|${file.lastModified}`)}`;
+function jsonBytes(obj) {
+  return new TextEncoder().encode(JSON.stringify(obj));
 }
 
-function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+function decodeJson(bytes) {
+  try { return JSON.parse(new TextDecoder().decode(bytes)); }
+  catch { return null; }
+}
+
+function randomSalt() {
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return [...arr].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function derivePassword(password, saltHex) {
+  const salt = new Uint8Array(saltHex.match(/.{1,2}/g).map(x => parseInt(x, 16)));
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 150000 }, key, 256);
+  return [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 function App() {
   const [file, setFile] = useState(null);
-  const [kind, setKind] = useState(null); // pdf | docx
-  const [password, setPassword] = useState('');
-  const [isProtected, setIsProtected] = useState(false);
-  const [unlocked, setUnlocked] = useState(true);
+  const [kind, setKind] = useState(null); // pdf | word
   const [status, setStatus] = useState('Abre um PDF ou Word para começar.');
+  const [password, setPassword] = useState('');
+  const [lockInfo, setLockInfo] = useState(null);
+  const [unlocked, setUnlocked] = useState(true);
+  const [isRjpPdf, setIsRjpPdf] = useState(false);
 
-  // PDF
+  // PDF base/editing
   const [pdfProxy, setPdfProxy] = useState(null);
-  const [pdfBytes, setPdfBytes] = useState(null);
+  const [basePdfBytes, setBasePdfBytes] = useState(null);
   const [pageNo, setPageNo] = useState(1);
   const [pageMeta, setPageMeta] = useState(null);
   const [textItems, setTextItems] = useState([]);
@@ -45,13 +68,15 @@ function App() {
   const [newTexts, setNewTexts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [tool, setTool] = useState('select');
+
+  // Word / Word-backed editable PDF
+  const [wordHtml, setWordHtml] = useState('');
+  const wordRef = useRef(null);
+
+  // Common
   const [saveName, setSaveName] = useState('');
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
-
-  // Word
-  const [wordHtml, setWordHtml] = useState('');
-  const wordRef = useRef(null);
   const canvasRef = useRef(null);
   const pageWrapRef = useRef(null);
 
@@ -61,40 +86,85 @@ function App() {
     return textItems.find(x => x.id === selectedId) || null;
   }, [selectedId, textItems, newTexts]);
 
-  async function resetAll() {
-    setPdfProxy(null); setPdfBytes(null); setPageNo(1); setPageMeta(null);
+  function normalisePdfName(name) {
+    const clean = (name || 'documento_editado.pdf').trim().replace(/[\\/:*?"<>|]+/g, '_');
+    return clean.toLowerCase().endsWith('.pdf') ? clean : `${clean}.pdf`;
+  }
+
+  function downloadBlob(blob, filename) {
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  function resetAll() {
+    setPdfProxy(null); setBasePdfBytes(null); setPageNo(1); setPageMeta(null);
     setTextItems([]); setChanges({}); setNewTexts([]); setSelectedId(null);
-    setWordHtml(''); setTool('select');
+    setWordHtml(''); setTool('select'); setPassword(''); setLockInfo(null);
+    setUnlocked(true); setIsRjpPdf(false);
+  }
+
+  async function openPdf(f, topBytes) {
+    const topProxy = await pdfjsLib.getDocument({ data: cloneBytes(topBytes) }).promise;
+    const attachments = await topProxy.getAttachments().catch(() => null);
+    const projectAtt = attachments?.[PROJECT_FILE];
+    const project = projectAtt ? decodeJson(bytesFromAttachment(projectAtt)) : null;
+    const validProject = project?.magic === PROJECT_MAGIC;
+
+    if (validProject && project.mode === 'word') {
+      setKind('word');
+      setWordHtml(project.html || '<p></p>');
+      setLockInfo(project.lock || null);
+      setUnlocked(!project.lock);
+      setIsRjpPdf(true);
+      setStatus('PDF editável RJP aberto. O conteúdo original do Word continua editável dentro deste PDF.');
+      return;
+    }
+
+    let baseBytes = cloneBytes(topBytes);
+    let baseProxy = topProxy;
+    if (validProject && project.mode === 'pdf') {
+      const baseAtt = attachments?.[BASE_FILE];
+      const embeddedBase = bytesFromAttachment(baseAtt);
+      if (embeddedBase?.length) {
+        baseBytes = embeddedBase;
+        baseProxy = await pdfjsLib.getDocument({ data: cloneBytes(baseBytes) }).promise;
+      }
+      setChanges(project.changes || {});
+      setNewTexts(project.newTexts || []);
+      setLockInfo(project.lock || null);
+      setUnlocked(!project.lock);
+      setIsRjpPdf(true);
+      setStatus(`PDF editável RJP aberto: ${baseProxy.numPages} página(s). As alterações anteriores foram recuperadas.`);
+    } else {
+      setStatus(`PDF aberto: ${topProxy.numPages} página(s). Ao guardar, passa a PDF editável RJP.`);
+    }
+    setKind('pdf');
+    setBasePdfBytes(baseBytes);
+    setPdfProxy(baseProxy);
   }
 
   async function openFile(ev) {
     const f = ev.target.files?.[0];
     if (!f) return;
-    await resetAll();
+    resetAll();
     setFile(f);
-    setSaveName(f.name.replace(/\.(pdf|docx)$/i, '') + '_editado.pdf');
-    setPassword('');
-    const key = await fileKey(f);
-    const protectedHash = localStorage.getItem(key);
-    setIsProtected(!!protectedHash);
-    setUnlocked(!protectedHash);
-
+    setSaveName(normalisePdfName(f.name.replace(/\.(pdf|docx)$/i, '')));
     const ext = f.name.toLowerCase();
     try {
+      const arr = await f.arrayBuffer();
       if (ext.endsWith('.pdf')) {
-        setKind('pdf');
-        const arr = await f.arrayBuffer();
-        const bytes = new Uint8Array(arr);
-        setPdfBytes(bytes);
-        const proxy = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
-        setPdfProxy(proxy);
-        setStatus(`PDF aberto: ${proxy.numPages} página(s).`);
+        await openPdf(f, new Uint8Array(arr));
       } else if (ext.endsWith('.docx')) {
-        setKind('docx');
-        const arr = await f.arrayBuffer();
+        setKind('word');
         const result = await mammoth.convertToHtml({ arrayBuffer: arr });
         setWordHtml(result.value || '<p></p>');
-        setStatus('Word aberto e convertido para edição no browser.');
+        setStatus('Word aberto. Edita e guarda: o novo PDF ficará reeditável nesta WebApp.');
       } else {
         alert('Formato não suportado. Usa PDF ou DOCX.');
         setFile(null); setKind(null);
@@ -103,36 +173,38 @@ function App() {
       console.error(err);
       alert(`Não foi possível abrir o ficheiro. ${err?.message || ''}`);
       setStatus('Erro ao abrir ficheiro.');
+    } finally {
+      ev.target.value = '';
     }
   }
 
   async function protectFile() {
     if (!file) return alert('Abre primeiro um ficheiro.');
     if (!password.trim()) return alert('Define uma password.');
-    const key = await fileKey(file);
-    localStorage.setItem(key, await sha256(password));
-    setIsProtected(true); setUnlocked(true);
-    setStatus('Password associada a este ficheiro neste dispositivo.');
+    const salt = randomSalt();
+    const hash = await derivePassword(password, salt);
+    setLockInfo({ salt, hash, algorithm: 'PBKDF2-SHA256-150000' });
+    setUnlocked(true);
+    setStatus('Password definida. Ficará gravada dentro do PDF quando carregares em Guardar.');
   }
 
   async function unlockFile() {
-    if (!file) return;
-    const key = await fileKey(file);
-    const stored = localStorage.getItem(key);
-    if (!stored || stored === await sha256(password)) {
+    if (!lockInfo) return setUnlocked(true);
+    if (!password) return alert('Introduz a password.');
+    const hash = await derivePassword(password, lockInfo.salt);
+    if (hash === lockInfo.hash) {
       setUnlocked(true);
       setStatus('Documento desbloqueado.');
     } else alert('Password incorreta.');
   }
 
   async function removeProtection() {
-    if (!file) return;
-    const key = await fileKey(file);
-    const stored = localStorage.getItem(key);
-    if (stored && stored !== await sha256(password)) return alert('Introduz a password atual para remover a proteção.');
-    localStorage.removeItem(key);
-    setIsProtected(false); setUnlocked(true); setPassword('');
-    setStatus('Proteção local removida.');
+    if (!lockInfo) return;
+    if (!password) return alert('Introduz a password atual.');
+    const hash = await derivePassword(password, lockInfo.salt);
+    if (hash !== lockInfo.hash) return alert('Password incorreta.');
+    setLockInfo(null); setUnlocked(true); setPassword('');
+    setStatus('Proteção removida. A alteração fica permanente no próximo Guardar.');
   }
 
   useEffect(() => {
@@ -144,12 +216,14 @@ function App() {
       const rawViewport = page.getViewport({ scale: 1 });
       const canvas = canvasRef.current;
       if (!canvas || cancelled) return;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { alpha: false });
       canvas.width = Math.ceil(viewport.width);
       canvas.height = Math.ceil(viewport.height);
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport, background: 'white' }).promise;
       const content = await page.getTextContent();
       if (cancelled) return;
       const items = content.items.map((it, idx) => {
@@ -177,6 +251,20 @@ function App() {
     return () => { cancelled = true; };
   }, [pdfProxy, pageNo, kind, unlocked]);
 
+  useEffect(() => {
+    setChanges(c => {
+      let dirty = false;
+      const next = { ...c };
+      for (const item of textItems) {
+        if (next[item.id] && !next[item.id].meta) {
+          next[item.id] = { ...next[item.id], meta: { x:item.x, y:item.y, width:item.width, fontSize:item.fontSize, page:item.page } };
+          dirty = true;
+        }
+      }
+      return dirty ? next : c;
+    });
+  }, [textItems]);
+
   function textValue(item) {
     return changes[item.id]?.text ?? item.original;
   }
@@ -186,20 +274,21 @@ function App() {
     if (selected.id.startsWith('new:')) {
       setNewTexts(xs => xs.map(x => x.id === selected.id ? { ...x, text } : x));
     } else {
-      setChanges(c => ({ ...c, [selected.id]: { ...(c[selected.id] || {}), text } }));
+      const meta = { x:selected.x, y:selected.y, width:selected.width, fontSize:selected.fontSize, page:selected.page };
+      setChanges(c => ({ ...c, [selected.id]: { ...(c[selected.id] || {}), text, meta: c[selected.id]?.meta || meta } }));
     }
   }
 
   function deleteSelected() {
     if (!selected) return;
     if (selected.id.startsWith('new:')) setNewTexts(xs => xs.filter(x => x.id !== selected.id));
-    else setChanges(c => ({ ...c, [selected.id]: { ...(c[selected.id] || {}), text: '' } }));
+    else updateSelected('');
     setSelectedId(null);
   }
 
   function onPageClick(e) {
     if (tool !== 'text' || !pageMeta || !pageWrapRef.current) return;
-    if (e.target.closest('.pdf-hit')) return;
+    if (e.target.closest('.pdf-hit,.newText')) return;
     const rect = pageWrapRef.current.getBoundingClientRect();
     const px = clamp(e.clientX - rect.left, 0, pageMeta.cssWidth);
     const py = clamp(e.clientY - rect.top, 0, pageMeta.cssHeight);
@@ -212,91 +301,178 @@ function App() {
     setTool('select');
   }
 
-  async function savePdf(customName = null) {
-    if (!pdfBytes) return;
-    try {
-      setStatus('A gerar PDF editado...');
-      const doc = await PDFDocument.load(pdfBytes.slice());
-      const font = await doc.embedFont(StandardFonts.Helvetica);
-      for (const [id, ch] of Object.entries(changes)) {
-        const [pStr, idxStr] = id.replace('p','').split(':');
-        const pageIndex = Number(pStr) - 1;
-        const page = doc.getPages()[pageIndex];
-        if (!page) continue;
-        const source = pageNo === pageIndex + 1 ? textItems.find(t => t.id === id) : null;
-        // If source is not on current page, recover its approximate geometry from cached change metadata.
-        const meta = ch.meta || source;
-        if (!meta) continue;
-        const size = meta.fontSize || 11;
-        page.drawRectangle({
-          x: meta.x - 1,
-          y: meta.y - size * 0.22,
-          width: Math.max((meta.width || size) + 3, 5),
-          height: size * 1.18,
-          color: rgb(1,1,1)
-        });
-        if ((ch.text ?? '').length) page.drawText(ch.text, { x: meta.x, y: meta.y, size, font, color: rgb(0,0,0) });
-      }
-      for (const nt of newTexts) {
-        const page = doc.getPages()[nt.page - 1];
-        if (!page || !nt.text) continue;
-        page.drawText(nt.text, { x: nt.x, y: nt.y, size: nt.fontSize || 12, font, color: rgb(0,0,0) });
-      }
-      const out = await doc.save();
-      const finalName = normalisePdfName(customName || saveName || file.name.replace(/\.pdf$/i,'') + '_editado.pdf');
-      downloadBlob(new Blob([out], { type: 'application/pdf' }), finalName);
-      setSaveName(finalName);
-      setStatus('PDF editado guardado.');
-    } catch (err) {
-      console.error(err);
-      alert(`Erro ao guardar PDF: ${err?.message || err}`);
-      setStatus('Erro ao guardar PDF.');
-    }
-  }
-
-  // Persist geometry when a PDF text is changed, so changing page later does not lose export coordinates.
-  useEffect(() => {
-    setChanges(c => {
-      let dirty = false;
-      const next = { ...c };
-      for (const item of textItems) {
-        if (next[item.id] && !next[item.id].meta) {
-          next[item.id] = { ...next[item.id], meta: { x:item.x, y:item.y, width:item.width, fontSize:item.fontSize } };
-          dirty = true;
-        }
-      }
-      return dirty ? next : c;
-    });
-  }, [textItems]);
-
-  async function exportWordPdf(customName = null) {
-    if (!wordRef.current) return;
-    setStatus('A converter Word editado para PDF...');
-    const options = {
-      margin: [10, 10, 10, 10],
-      filename: normalisePdfName(customName || saveName || file.name.replace(/\.docx$/i,'') + '_editado.pdf'),
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css','legacy'] }
+  function currentProject(mode, extra = {}) {
+    return {
+      magic: PROJECT_MAGIC,
+      version: PROJECT_VERSION,
+      savedAt: new Date().toISOString(),
+      mode,
+      sourceName: file?.name || '',
+      lock: lockInfo || null,
+      ...extra
     };
-    try {
-      await html2pdf().set(options).from(wordRef.current).save();
-      setStatus('Word editado exportado para PDF.');
-    } catch (err) {
-      console.error(err);
-      alert('Não foi possível converter o Word para PDF.');
-      setStatus('Erro ao exportar Word.');
+  }
+
+  function safeText(str) {
+    // Standard Helvetica supports Portuguese/Western European text. Replace rare unsupported glyphs rather than failing the save.
+    return String(str ?? '').replace(/[\u{10000}-\u{10FFFF}]/gu, '□');
+  }
+
+  function applyPdfEdits(doc, font) {
+    for (const [id, ch] of Object.entries(changes)) {
+      const meta = ch.meta;
+      if (!meta) continue;
+      const page = doc.getPages()[(meta.page || Number(id.match(/^p(\d+):/)?.[1]) || 1) - 1];
+      if (!page) continue;
+      const size = Math.max(6, meta.fontSize || 11);
+      page.drawRectangle({
+        x: Math.max(0, meta.x - 1),
+        y: Math.max(0, meta.y - size * 0.25),
+        width: Math.max((meta.width || size) + 4, 6),
+        height: size * 1.28,
+        color: rgb(1,1,1)
+      });
+      if ((ch.text ?? '').length) {
+        page.drawText(safeText(ch.text), { x: meta.x, y: meta.y, size, font, color: rgb(0,0,0), maxWidth: Math.max(page.getWidth() - meta.x - 6, 20) });
+      }
+    }
+    for (const nt of newTexts) {
+      const page = doc.getPages()[nt.page - 1];
+      if (!page || !nt.text) continue;
+      page.drawText(safeText(nt.text), { x: nt.x, y: nt.y, size: nt.fontSize || 12, font, color: rgb(0,0,0), maxWidth: Math.max(page.getWidth() - nt.x - 6, 20) });
     }
   }
 
-  function normalisePdfName(name) {
-    const clean = (name || 'documento_editado.pdf').trim().replace(/[\\/:*?\"<>|]+/g, '_');
-    return clean.toLowerCase().endsWith('.pdf') ? clean : `${clean}.pdf`;
+  async function buildVectorPdf() {
+    const doc = await PDFDocument.load(cloneBytes(basePdfBytes), { ignoreEncryption: true, updateMetadata: false });
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    applyPdfEdits(doc, font);
+    const project = currentProject('pdf', { changes, newTexts });
+    await doc.attach(cloneBytes(basePdfBytes), BASE_FILE, { mimeType: 'application/pdf', description: 'Base original para reedição no RJP PDF Editor' });
+    await doc.attach(jsonBytes(project), PROJECT_FILE, { mimeType: 'application/json', description: 'Dados editáveis do RJP PDF Editor' });
+    return new Uint8Array(await doc.save({ useObjectStreams: false, addDefaultPage: false }));
+  }
+
+  async function buildRasterPdf() {
+    const source = await pdfjsLib.getDocument({ data: cloneBytes(basePdfBytes) }).promise;
+    const outDoc = await PDFDocument.create();
+    const font = await outDoc.embedFont(StandardFonts.Helvetica);
+    for (let n = 1; n <= source.numPages; n++) {
+      setStatus(`Modo compatibilidade: a reconstruir página ${n}/${source.numPages}...`);
+      const srcPage = await source.getPage(n);
+      const raw = srcPage.getViewport({ scale: 1 });
+      const renderVp = srcPage.getViewport({ scale: 1.8 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(renderVp.width); canvas.height = Math.ceil(renderVp.height);
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      await srcPage.render({ canvasContext: ctx, viewport: renderVp, background: 'white' }).promise;
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.94));
+      if (!blob) throw new Error('Falha ao rasterizar a página.');
+      const jpg = await outDoc.embedJpg(new Uint8Array(await blob.arrayBuffer()));
+      const page = outDoc.addPage([raw.width, raw.height]);
+      page.drawImage(jpg, { x:0, y:0, width:raw.width, height:raw.height });
+    }
+    applyPdfEdits(outDoc, font);
+    const project = currentProject('pdf', { changes, newTexts });
+    await outDoc.attach(cloneBytes(basePdfBytes), BASE_FILE, { mimeType: 'application/pdf', description: 'Base original para reedição no RJP PDF Editor' });
+    await outDoc.attach(jsonBytes(project), PROJECT_FILE, { mimeType: 'application/json', description: 'Dados editáveis do RJP PDF Editor' });
+    return new Uint8Array(await outDoc.save({ useObjectStreams: false, addDefaultPage: false }));
+  }
+
+  async function inkScore(bytes) {
+    const proxy = await pdfjsLib.getDocument({ data: cloneBytes(bytes) }).promise;
+    if (!proxy.numPages) return 0;
+    const maxPages = Math.min(proxy.numPages, 2);
+    let score = 0;
+    for (let n=1; n<=maxPages; n++) {
+      const page = await proxy.getPage(n);
+      const vp = page.getViewport({ scale: 0.25 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.ceil(vp.width)); canvas.height = Math.max(1, Math.ceil(vp.height));
+      const ctx = canvas.getContext('2d', { alpha:false });
+      ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      await page.render({ canvasContext:ctx, viewport:vp, background:'white' }).promise;
+      const d = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+      for (let i=0;i<d.length;i+=16) {
+        if (d[i] < 242 || d[i+1] < 242 || d[i+2] < 242) score++;
+      }
+    }
+    return score;
+  }
+
+  async function savePdf(customName = null) {
+    if (!basePdfBytes) return;
+    try {
+      // V0.8: guardar sempre em modo seguro. Em vez de regravar o PDF original,
+      // reconstruímos todas as páginas num PDF novo a partir daquilo que o browser
+      // realmente consegue renderizar. Isto evita PDFs que o Acrobat abre em branco.
+      setStatus('Guardar seguro: a reconstruir o PDF página a página...');
+      const out = await buildRasterPdf();
+
+      // Validação final: o ficheiro recém-criado tem de voltar a abrir no PDF.js
+      // e apresentar tinta/conteúdo antes de ser descarregado.
+      const proxy = await pdfjsLib.getDocument({ data: cloneBytes(out) }).promise;
+      if (!proxy.numPages) throw new Error('O PDF gerado não contém páginas.');
+      const outInk = await inkScore(out);
+      if (outInk < 8) throw new Error('O PDF resultante parece estar vazio. O ficheiro não foi descarregado.');
+
+      const finalName = normalisePdfName(customName || saveName || 'documento.pdf');
+      downloadBlob(new Blob([out], { type:'application/pdf' }), finalName);
+      setSaveName(finalName);
+      setIsRjpPdf(true);
+      setStatus('PDF guardado em modo seguro. As páginas foram reconstruídas para evitar ficheiros em branco no Adobe Acrobat.');
+    } catch (err) {
+      console.error(err);
+      alert(`Não foi possível guardar o PDF: ${err?.message || err}`);
+      setStatus('Guardar cancelado: não foi criado nenhum PDF vazio.');
+    }
+  }
+
+  async function wordToRawPdf() {
+    const node = wordRef.current;
+    if (!node) throw new Error('Editor Word indisponível.');
+    const visibleText = (node.innerText || '').trim();
+    const hasVisualContent = !!node.querySelector('img,table,svg,canvas');
+    if (!visibleText && !hasVisualContent) throw new Error('O documento está vazio.');
+    const options = {
+      margin: [10,10,10,10],
+      image: { type:'jpeg', quality:0.98 },
+      html2canvas: { scale:2, useCORS:true, backgroundColor:'#ffffff', logging:false, scrollX:0, scrollY:0 },
+      jsPDF: { unit:'mm', format:'a4', orientation:'portrait', compress:true },
+      pagebreak: { mode:['css','legacy'] }
+    };
+    const ab = await html2pdf().set(options).from(node).outputPdf('arraybuffer');
+    return new Uint8Array(ab);
+  }
+
+  async function saveWordPdf(customName = null) {
+    if (!wordRef.current) return;
+    try {
+      setStatus('A gerar PDF editável a partir do Word...');
+      const html = wordRef.current.innerHTML;
+      const raw = await wordToRawPdf();
+      const rawInk = await inkScore(raw);
+      if (rawInk < 8) throw new Error('A conversão resultou numa página vazia. O ficheiro não foi guardado.');
+      const doc = await PDFDocument.load(raw, { updateMetadata:false });
+      const project = currentProject('word', { html });
+      await doc.attach(jsonBytes(project), PROJECT_FILE, { mimeType:'application/json', description:'Conteúdo editável do RJP PDF Editor' });
+      const out = new Uint8Array(await doc.save({ useObjectStreams:false, addDefaultPage:false }));
+      const finalName = normalisePdfName(customName || saveName || 'documento.pdf');
+      downloadBlob(new Blob([out], { type:'application/pdf' }), finalName);
+      setWordHtml(html);
+      setSaveName(finalName);
+      setIsRjpPdf(true);
+      setStatus('PDF criado e validado. Fecha-o e volta a abrir este mesmo PDF aqui: o conteúdo continua editável.');
+    } catch (err) {
+      console.error(err);
+      alert(`Não foi possível guardar: ${err?.message || err}`);
+      setStatus('Guardar cancelado para evitar um PDF em branco.');
+    }
   }
 
   function askSaveAs(action) {
-    const proposed = normalisePdfName(saveName || (file?.name || 'documento').replace(/\.(pdf|docx)$/i, '') + '_editado.pdf');
+    const proposed = normalisePdfName(saveName || 'documento.pdf');
     const chosen = window.prompt('Guardar como — nome do novo PDF:', proposed);
     if (chosen === null) return;
     const finalName = normalisePdfName(chosen);
@@ -305,60 +481,40 @@ function App() {
   }
 
   function toggleDictation() {
-    if (listening && recognitionRef.current) {
-      recognitionRef.current.stop();
-      return;
-    }
+    if (listening && recognitionRef.current) { recognitionRef.current.stop(); return; }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('O ditado do browser não está disponível neste dispositivo. No telemóvel, toca na caixa de texto e usa o microfone do Gboard/teclado Google.');
+      alert('O ditado do browser não está disponível. No Android, toca no campo e usa o microfone do Gboard.');
       return;
     }
-    if (!selected) {
-      alert('Seleciona primeiro um texto do PDF.');
-      return;
-    }
+    if (kind === 'pdf' && !selected) return alert('Seleciona primeiro um texto do PDF.');
     const recognition = new SpeechRecognition();
-    recognition.lang = 'pt-PT';
-    recognition.interimResults = true;
-    recognition.continuous = false;
+    recognition.lang = 'pt-PT'; recognition.interimResults = true; recognition.continuous = false;
     let finalText = '';
-    const base = selected.id.startsWith('new:') ? (selected.text || '') : (textValue(selected) || '');
+    const base = kind === 'pdf' && selected ? (selected.id.startsWith('new:') ? (selected.text || '') : (textValue(selected) || '')) : '';
     recognition.onstart = () => setListening(true);
-    recognition.onresult = (event) => {
+    recognition.onresult = event => {
       let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      for (let i=event.resultIndex;i<event.results.length;i++) {
         const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalText += t;
-        else interim += t;
+        if (event.results[i].isFinal) finalText += t; else interim += t;
       }
       const spoken = (finalText + interim).trim();
-      if (spoken) updateSelected((base && !base.endsWith(' ') ? base + ' ' : base) + spoken);
+      if (spoken && kind === 'pdf') updateSelected((base && !base.endsWith(' ') ? base + ' ' : base) + spoken);
     };
-    recognition.onerror = (event) => {
-      console.error(event);
-      setListening(false);
-      if (event.error !== 'aborted') alert('Não foi possível usar o ditado. Podes usar o microfone do Gboard diretamente na caixa de texto.');
-    };
+    recognition.onerror = event => { console.error(event); setListening(false); if (event.error !== 'aborted') alert('Não foi possível usar o ditado. Usa o microfone do Gboard diretamente no campo.'); };
     recognition.onend = () => setListening(false);
     recognitionRef.current = recognition;
     recognition.start();
   }
 
-  function downloadBlob(blob, filename) {
-    const a = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    a.href = url; a.download = filename; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-  }
-
-  const lockedView = file && isProtected && !unlocked;
+  const lockedView = file && !!lockInfo && !unlocked;
 
   return (
     <main>
       <header>
-        <div className="brand"><span className="rjp">RJP</span><span>PDF Editor</span><span className="version">V0.6</span></div>
-        <div className="subtitle">PDF + Word • edição local no browser • GitHub Pages</div>
+        <div className="brand"><span className="rjp">RJP</span><span>PDF Editor</span><span className="version">V0.8</span></div>
+        <div className="subtitle">Guardar seguro • PDF persistente e reeditável • GitHub Pages</div>
       </header>
 
       <section className="topbar">
@@ -368,9 +524,10 @@ function App() {
         <div className="passwordBox">
           <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password deste ficheiro" />
           <button className="btn" onClick={protectFile}><Lock size={16}/> Proteger</button>
-          {isProtected && !unlocked && <button className="btn" onClick={unlockFile}><Unlock size={16}/> Desbloquear</button>}
-          {isProtected && unlocked && <button className="btn ghost" onClick={removeProtection}>Remover proteção</button>}
+          {lockInfo && !unlocked && <button className="btn" onClick={unlockFile}><Unlock size={16}/> Desbloquear</button>}
+          {lockInfo && unlocked && <button className="btn ghost" onClick={removeProtection}>Remover proteção</button>}
         </div>
+        {isRjpPdf && <div className="rjpBadge"><BadgeCheck size={16}/> PDF editável RJP</div>}
         <div className="fileName">{file ? file.name : 'Nenhum ficheiro aberto'}</div>
       </section>
 
@@ -384,17 +541,17 @@ function App() {
               <button className={tool==='select'?'btn active':'btn'} onClick={()=>setTool('select')}><MousePointer2 size={16}/> Selecionar</button>
               <button className={tool==='text'?'btn active':'btn'} onClick={()=>setTool('text')}><Type size={16}/> Novo texto</button>
             </div>
-            <p className="hint">Clica num texto existente para o selecionar. Escolhe “Novo texto” e clica na página para inserir texto.</p>
+            <p className="hint">Estás a abrir o PDF real. Clica no texto existente para o alterar. Quando guardares, a app grava também os dados de reedição dentro do próprio PDF.</p>
 
             <h3>Texto selecionado</h3>
             {selected ? <>
               <textarea className="editText" value={selected.id.startsWith('new:') ? selected.text : textValue(selected)} onChange={e=>updateSelected(e.target.value)} inputMode="text" />
-              <button className={listening ? "btn micBtn listening" : "btn micBtn"} onClick={toggleDictation}>
+              <button className={listening ? 'btn micBtn listening' : 'btn micBtn'} onClick={toggleDictation}>
                 {listening ? <MicOff size={16}/> : <Mic size={16}/>} {listening ? 'Parar ditado' : 'Ditar texto'}
               </button>
               <div className="smallGrid">
                 <label>Tamanho
-                  <input type="number" min="6" max="72" value={selected.id.startsWith('new:') ? selected.fontSize : selected.fontSize} onChange={e=>{
+                  <input type="number" min="6" max="72" value={selected.fontSize || 12} onChange={e=>{
                     if (selected.id.startsWith('new:')) setNewTexts(xs=>xs.map(x=>x.id===selected.id?{...x,fontSize:Number(e.target.value)||12}:x));
                   }} disabled={!selected.id.startsWith('new:')} />
                 </label>
@@ -410,23 +567,24 @@ function App() {
 
             <div className="saveGroup">
               <input className="saveName" value={saveName} onChange={e=>setSaveName(e.target.value)} aria-label="Nome do PDF" />
-              <button className="btn saveBtn" onClick={()=>savePdf()}><Save size={17}/> Guardar</button>
+              <button className="btn saveBtn" onClick={()=>savePdf()}><Save size={17}/> Guardar PDF</button>
               <button className="btn saveAsBtn" onClick={()=>askSaveAs(savePdf)}><Download size={17}/> Guardar como...</button>
             </div>
-            <div className="notice"><Info size={16}/><span>A edição substitui o texto visualmente no PDF: cobre o texto original e escreve o novo na mesma zona.</span></div>
+            <div className="notice"><Info size={16}/><span>Na V0.8 o Guardar usa sempre o modo seguro: reconstrói todas as páginas num PDF novo e valida o resultado antes do download. Isto evita o PDF branco no Adobe Acrobat.</span></div>
           </aside>
 
           <div className="pdfArea">
             <div className={`pdfPage ${tool==='text'?'addTextMode':''}`} ref={pageWrapRef} onClick={onPageClick} style={pageMeta?{width:pageMeta.cssWidth,height:pageMeta.cssHeight}:undefined}>
               <canvas ref={canvasRef}/>
-              {textItems.map(item => (
-                <button key={item.id} className={`pdf-hit ${selectedId===item.id?'selected':''} ${changes[item.id]?'changed':''}`}
-                  style={{left:item.left,top:item.top,width:item.cssWidth,height:item.cssHeight}}
+              {textItems.map(item => {
+                const changed = changes[item.id];
+                return <button key={item.id} className={`pdf-hit ${selectedId===item.id?'selected':''} ${changed?'changed':''}`}
+                  style={{left:item.left,top:item.top,width:item.cssWidth,height:item.cssHeight,fontSize:`${item.fontSize*SCALE}px`,lineHeight:1.05}}
                   title={textValue(item)}
                   onClick={e=>{e.stopPropagation();setSelectedId(item.id);setTool('select')}}>
                   <span>{textValue(item)}</span>
-                </button>
-              ))}
+                </button>;
+              })}
               {newTexts.filter(x=>x.page===pageNo).map(item=>(
                 <button key={item.id} className={`newText ${selectedId===item.id?'selected':''}`}
                   style={{left:item.left,top:item.top,fontSize:(item.fontSize*SCALE)+'px'}}
@@ -435,15 +593,15 @@ function App() {
             </div>
           </div>
         </section>
-      ) : kind === 'docx' ? (
+      ) : kind === 'word' ? (
         <section className="wordWorkspace">
           <div className="wordToolbar">
-            <div><FileType2 size={18}/> <b>Modo Word editável</b></div>
-            <span>Edita diretamente o texto abaixo. Depois exporta para PDF.</span>
+            <div><FileType2 size={18}/> <b>{isRjpPdf ? 'PDF editável (origem Word)' : 'Word editável'}</b></div>
+            <span>{isRjpPdf ? 'Abriste um PDF e recuperámos o conteúdo editável guardado dentro dele.' : 'Edita o Word; depois o PDF gerado poderá ser reaberto e alterado nesta app.'}</span>
             <div className="wordSaveActions">
               <input className="saveName" value={saveName} onChange={e=>setSaveName(e.target.value)} aria-label="Nome do PDF" />
-              <button className="btn saveBtn" onClick={()=>exportWordPdf()}><Save size={17}/> Guardar PDF</button>
-              <button className="btn saveAsBtn" onClick={()=>askSaveAs(exportWordPdf)}><Download size={17}/> Guardar como...</button>
+              <button className="btn saveBtn" onClick={()=>saveWordPdf()}><Save size={17}/> Guardar PDF</button>
+              <button className="btn saveAsBtn" onClick={()=>askSaveAs(saveWordPdf)}><Download size={17}/> Guardar como...</button>
             </div>
           </div>
           <div className="wordPaper" ref={wordRef} contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{__html:wordHtml}} />
@@ -452,7 +610,7 @@ function App() {
         <section className="empty">
           <div className="fileIcons"><FileText size={58}/><FileType2 size={58}/></div>
           <h2>Abre um PDF ou Word (.docx)</h2>
-          <p>PDF: seleciona texto existente, altera e exporta. Word: edita diretamente e guarda como PDF.</p>
+          <p>Word → PDF reeditável. PDF normal → PDF reeditável RJP. O ficheiro guardado deixa de depender do Word original.</p>
         </section>
       )}
 
