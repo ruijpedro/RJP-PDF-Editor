@@ -1,8 +1,0 @@
-{
-  "appId": "pt.rjp.pdfeditor",
-  "appName": "RJP PDF Editor",
-  "webDir": "dist",
-  "server": {
-    "androidScheme": "https"
-  }
-}
