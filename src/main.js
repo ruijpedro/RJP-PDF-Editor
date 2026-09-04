@@ -8,7 +8,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
 
-const APP_SESSION_VERSION = '3.0-ocr-all-pages';
+const APP_SESSION_VERSION = '3.0.2-ocr-all-pages-savefix';
 const DEFAULT_TEMPLATE_NAME = 'Ficha_atendimento_Patricia_PDF_PREENCHIVEL_SEM_ESPACO_RGPD.pdf';
 const DEFAULT_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/${DEFAULT_TEMPLATE_NAME}`;
 
@@ -342,6 +342,20 @@ async function savePdf(){
     editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise; await renderAll(); updateChrome(); status('PDF guardado. O documento continua aberto e podes continuar a editar.'); btn.textContent='Guardado ✓'; setTimeout(()=>btn.textContent=old,1500);
   }catch(e){console.error(e);alert('Erro ao guardar PDF: '+e.message);status('Erro ao guardar.');}
   finally{btn.disabled=false;}
+}
+
+function downloadBytes(bytes, name='documento.pdf'){
+  const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const blob = new Blob([data], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 function editedFileName(name='documento.pdf'){

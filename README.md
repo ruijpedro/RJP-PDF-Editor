@@ -1,3 +1,9 @@
+## V3.0.2 — correção Guardar PDF
+
+- Corrige `downloadBytes is not defined`.
+- Mantém a correção WinAnsi/checkboxes e OCR multipágina.
+- O PDF é descarregado por Blob/Object URL no browser.
+
 # RJP PDF Editor V3.0 — OCR AutoFill Todas as Páginas
 
 WebApp para GitHub Pages com ficha por defeito, edição PDF e OCR manuscrito Google Cloud Vision através do proxy seguro.
