@@ -12,10 +12,26 @@ const scan = {
 };
 
 const FIELD_MAP = {
+  dataFichaDia: 'P1_texto_001_dia',
+  dataFichaMes: 'P1_texto_001_mes',
+  dataFichaAno: 'P1_texto_001_ano',
+  jaRequereuRsi: 'P1_check_002',
+  dataRsiDia: 'P1_texto_003_dia',
+  dataRsiMes: 'P1_texto_003_mes',
+  dataRsiAno: 'P1_texto_003_ano',
+  processoFamiliar: 'P1_texto_004',
+  titular: 'P1_check_005',
+  requerente: 'P1_check_006',
+  iniciativaPropria: 'P1_check_007',
+  iniciativaOutro: 'P1_check_008',
+  outroQual: 'P1_texto_009',
   nome: 'P1_texto_010',
-  dataNascimento: ['P1_texto_011'],
+  dataNascimento: 'P1_texto_011',
   naturalidade: 'P1_texto_012',
   biCc: 'P1_texto_013',
+  validadeDia: 'P1_texto_014_dia',
+  validadeMes: 'P1_texto_014_mes',
+  validadeAno: 'P1_texto_014_ano',
   arquivo: 'P1_texto_015',
   estadoCivil: 'P1_texto_016',
   nacionalidade: 'P1_texto_017',
@@ -26,6 +42,13 @@ const FIELD_MAP = {
   codigoPostal2: 'P1_texto_022',
   localidade: 'P1_texto_023',
   contactos: 'P1_texto_024',
+  agregado1Nome: 'Agregado_L1_C1_132',
+  agregado1Parentesco: 'Agregado_L1_C2_133',
+  agregado1EstadoCivil: 'Agregado_L1_C3_134',
+  agregado1DataNascimento: 'Agregado_L1_C4_135',
+  agregado1Profissao: 'Agregado_L1_C5_136',
+  agregado1Niss: 'Agregado_L1_C6_137',
+  observacoesAgregado: 'P1_observacoes_agregado',
 };
 
 function e(s=''){return String(s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -203,33 +226,112 @@ async function runProOcr(){
   }catch(err){console.error(err);alert('OCR Manuscrito Pro: '+err.message);setStatus('Falha no OCR Manuscrito Pro. Verifica endpoint/token e qualidade do scan.');}
   finally{scan.busy=false;document.querySelector('#scanOcrPro').disabled=false;}
 }
-function lineValue(text,label,nextLabels=[]){
-  const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');const stop=nextLabels.length?`(?=${nextLabels.map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')}|$)`:'$';const m=text.match(new RegExp(`${escaped}\\s*[:\-]?\\s*([^\\n]{1,160}?)${stop}`,'i'));return m?.[1]?.replace(/[_]{2,}/g,' ').trim()||'';
+function normText(text=''){
+  return String(text)
+    .replace(/\r/g,'')
+    .replace(/[\u00A0\t]+/g,' ')
+    .replace(/[ ]{2,}/g,' ')
+    .replace(/\n[ ]+/g,'\n')
+    .trim();
+}
+function compact(v=''){
+  return String(v).replace(/[_]{2,}/g,' ').replace(/\s{2,}/g,' ').replace(/^[:;,.\-\s]+|[:;,.\-\s]+$/g,'').trim();
+}
+function labelValue(text,label,nextLabels=[]){
+  const src=normText(text);
+  const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const labelRe=typeof label==='string'?esc(label):label.source;
+  const next=nextLabels.map(x=>typeof x==='string'?esc(x):x.source).join('|');
+  const re=new RegExp(`(?:^|\\n|\\s)${labelRe}\\s*[:;.,-]?\\s*([\\s\\S]{0,220}?)(?=${next?`(?:\\n|\\s)(?:${next})\\s*[:;.,-]?`:'$'})`,'i');
+  const m=src.match(re);
+  return compact(m?.[1]||'').replace(/\n+/g,' ');
+}
+function firstDate(text,afterLabel=''){
+  const src=afterLabel?labelValue(text,afterLabel,['1. Identificação','Já requereu RSI','N.º Processo Familiar']):normText(text);
+  const m=(src||text).match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/);
+  if(!m)return null;
+  let y=m[3]; if(y.length===2)y=(Number(y)>40?'19':'20')+y;
+  return {dia:m[1].padStart(2,'0'),mes:m[2].padStart(2,'0'),ano:y,raw:`${m[1].padStart(2,'0')}/${m[2].padStart(2,'0')}/${y}`};
+}
+function hasCheckedNear(text,label,window=50){
+  const src=normText(text); const i=src.toLowerCase().indexOf(label.toLowerCase()); if(i<0)return false;
+  const part=src.slice(i,i+window);
+  return /[☑☒✓✔Xx]/.test(part.replace(/\bNão\b/gi,''));
+}
+function onlyDigits(v=''){return String(v).replace(/\D/g,'');}
+function cleanNumber(v=''){return String(v).replace(/(?<=\d)\s+(?=\d)/g,'').replace(/[^0-9A-Za-z./-]/g,' ').replace(/\s+/g,' ').trim();}
+function parseAggregate(text){
+  const src=normText(text);
+  const i=src.search(/2\.\s*Agregado\s+Familiar/i); if(i<0)return {};
+  let block=src.slice(i); const j=block.search(/Observa(?:ç|c)[õo]es\s*\(/i); if(j>0)block=block.slice(0,j);
+  const lines=block.split('\n').map(compact).filter(Boolean);
+  const dataIdx=lines.findIndex(l=>/Data\s+Nas/i.test(l));
+  const candidates=lines.slice(Math.max(0,dataIdx+1)).filter(l=>/\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/.test(l));
+  if(!candidates.length)return {};
+  const row=candidates[0];
+  const dm=row.match(/\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b/); if(!dm)return {};
+  const date=dm[1], pos=row.indexOf(date); let left=compact(row.slice(0,pos)), right=compact(row.slice(pos+date.length));
+  const estados=['Casado','Casada','Solteiro','Solteira','Divorciado','Divorciada','Viúvo','Viúva','Unido','Unida'];
+  const parentescos=['Marido','Esposa','Filho','Filha','Pai','Mãe','Mae','Irmão','Irmã','Irmao','Irma','Companheiro','Companheira','Neto','Neta','Avô','Avó','Avo'];
+  let estado=''; for(const x of estados){const r=new RegExp(`\\b${x}\\b`,'i'); if(r.test(left)){estado=x;left=compact(left.replace(r,''));break;}}
+  let parentesco=''; for(const x of parentescos){const r=new RegExp(`\\b${x}\\b`,'i'); if(r.test(left)){parentesco=x;left=compact(left.replace(r,''));break;}}
+  let niss=''; const nm=right.match(/(?:\b\d[\d ]{7,14}\b)\s*$/); if(nm){niss=onlyDigits(nm[0]);right=compact(right.slice(0,right.lastIndexOf(nm[0])));}
+  return {agregado1Nome:left,agregado1Parentesco:parentesco,agregado1EstadoCivil:estado,agregado1DataNascimento:date,agregado1Profissao:right,agregado1Niss:niss};
+}
+function parseObservacoesAgregado(text){
+  const src=normText(text);
+  const m=src.match(/Observa(?:ç|c)[õo]es\s*\(pedidos\/problemas,?\s*encaminhamentos,?\s*elemento\s*alvo\)\s*:?\s*([\s\S]*?)(?=---\s*PÁGINA\s*2|3\.1\.?\s*Saúde|$)/i);
+  if(!m)return '';
+  return compact(m[1].replace(/\n+/g,' '));
 }
 function extractFields(text){
-  const clean=text.replace(/\r/g,'').replace(/[ \t]+/g,' ');
-  const out={};
-  out.nome=lineValue(clean,'Nome',['Data de Nascimento','Data Nascimento','Naturalidade']);
-  out.dataNascimento=lineValue(clean,'Data de Nascimento',['Naturalidade','B.I','B. I','C.C']);
-  out.naturalidade=lineValue(clean,'Naturalidade',['B.I','B. I','C.C','Estado Civil']);
-  out.biCc=lineValue(clean,'B.I. / C.C.',['Emitido','Validade','Arquivo','Estado Civil'])||lineValue(clean,'B.I / C.C',['Emitido','Validade','Arquivo']);
-  out.estadoCivil=lineValue(clean,'Estado Civil',['Nacionalidade','Beneficiário']);
-  out.nacionalidade=lineValue(clean,'Nacionalidade',['Beneficiário','Contribuinte']);
-  out.beneficiario=lineValue(clean,'Beneficiário n.º',['Contribuinte','Morada']);
-  out.contribuinte=lineValue(clean,'Contribuinte n.º',['Morada','Código Postal']);
-  out.morada=lineValue(clean,'Morada',['Código Postal','Contactos']);
-  const cp=clean.match(/(?:Código\s*Postal|C[oó]d\.?)\s*[:\-]?\s*(\d{4})\s*[- ]\s*(\d{3})/i);if(cp){out.codigoPostal1=cp[1];out.codigoPostal2=cp[2];}
-  out.contactos=lineValue(clean,'Contactos',['Agregado Familiar','Observações']);
-  return Object.fromEntries(Object.entries(out).filter(([,v])=>v));
+  const clean=normText(text), out={};
+  const topDate=firstDate(clean); if(topDate){out.dataFichaDia=topDate.dia;out.dataFichaMes=topDate.mes;out.dataFichaAno=topDate.ano;}
+  out.jaRequereuRsi=hasCheckedNear(clean,'Já requereu RSI',35);
+  const rsiSeg=labelValue(clean,/Já\s+requereu\s+RSI/i,[/N\.?º?\s*Processo\s+Familiar/i,'Titular','Requerente']); const rsiDate=firstDate(rsiSeg); if(rsiDate){out.dataRsiDia=rsiDate.dia;out.dataRsiMes=rsiDate.mes;out.dataRsiAno=rsiDate.ano;}
+  out.processoFamiliar=cleanNumber(labelValue(clean,/N\.?º?\s*Processo\s+Familiar/i,['Outro, qual','Iniciativa','Nome']));
+  out.titular=hasCheckedNear(clean,'Titular',25); out.requerente=hasCheckedNear(clean,'Requerente',30);
+  out.iniciativaPropria=hasCheckedNear(clean,'Iniciativa: Própria',45);
+  out.iniciativaOutro=hasCheckedNear(clean,'Outro, qual',40);
+  out.outroQual=labelValue(clean,'Outro, qual',['Iniciativa: Própria','Nome','Data de Nascimento']);
+  out.nome=labelValue(clean,'Nome',['Data de Nascimento','Naturalidade']);
+  out.dataNascimento=labelValue(clean,/Data\s+de\s+Nascimento/i,['Naturalidade','B.I','B. I','C.C']);
+  out.naturalidade=labelValue(clean,'Naturalidade',['B.I','B. I','C.C','Estado Civil','Nacionalidade']);
+  out.biCc=cleanNumber(labelValue(clean,/B\.?I\.?\s*\/\s*C\.?C\.?/i,['Emitido','Validade','Arquivo','Estado Civil']));
+  const val=labelValue(clean,/Emitido\s*\/\s*Validade|Emitido\s+Validade|Validade/i,['Arquivo de','Arquivo','Estado Civil','Nacionalidade']); const vd=firstDate(val); if(vd){out.validadeDia=vd.dia;out.validadeMes=vd.mes;out.validadeAno=vd.ano;}
+  out.arquivo=labelValue(clean,/Arquivo\s+de/i,['Estado Civil','Nacionalidade','Beneficiário']);
+  out.estadoCivil=labelValue(clean,'Estado Civil',['Nacionalidade','Beneficiário','Contribuinte']);
+  out.nacionalidade=labelValue(clean,'Nacionalidade',['Beneficiário','Contribuinte','Morada']);
+  out.beneficiario=cleanNumber(labelValue(clean,/Benefici[aá]rio\s+n\.?º?/i,['Contribuinte','Morada','Código Postal']));
+  out.contribuinte=cleanNumber(labelValue(clean,/Contribuinte\s+n\.?º?/i,['Morada','Código Postal','Contactos','Agregado Familiar']));
+  out.morada=labelValue(clean,'Morada',['Código Postal','Contactos','Agregado Familiar']);
+  const cp=clean.match(/(?:Código\s*Postal|C[oó]d\.?\s*Postal)\s*[:\-]?\s*(\d{4})\s*[- ]\s*(\d{3})(?:\s+([^\n]{2,60}))?/i);if(cp){out.codigoPostal1=cp[1];out.codigoPostal2=cp[2];if(cp[3]&&!/Contactos|Agregado/i.test(cp[3]))out.localidade=compact(cp[3]);}
+  out.contactos=cleanNumber(labelValue(clean,'Contactos',['2. Agregado Familiar','Agregado Familiar','Observações']));
+  Object.assign(out,parseAggregate(clean));
+  out.observacoesAgregado=parseObservacoesAgregado(clean);
+  // Remove vazios, mas preserva booleanos false/true para checkboxes encontrados.
+  return Object.fromEntries(Object.entries(out).filter(([,v])=>typeof v==='boolean' || (v!==undefined&&v!==null&&String(v).trim()!=='')));
 }
-function extractAndShow(){scan.resultText=document.querySelector('#scanText').value;const f=extractFields(scan.resultText),n=document.querySelector('#scanExtracted');n.dataset.fields=JSON.stringify(f);n.innerHTML=Object.keys(f).length?`<h4>Campos sugeridos</h4>${Object.entries(f).map(([k,v])=>`<label><span>${e(k)}</span><input data-key="${e(k)}" value="${e(v)}"></label>`).join('')}`:'<p>Não encontrei campos com confiança suficiente. Podes corrigir o texto e tentar novamente.</p>';n.querySelectorAll('input').forEach(i=>i.oninput=()=>{const obj=JSON.parse(n.dataset.fields||'{}');obj[i.dataset.key]=i.value;n.dataset.fields=JSON.stringify(obj);});}
+function prettyKey(k){return ({
+  dataFichaDia:'Data — dia',dataFichaMes:'Data — mês',dataFichaAno:'Data — ano',jaRequereuRsi:'Já requereu RSI',dataRsiDia:'RSI — dia',dataRsiMes:'RSI — mês',dataRsiAno:'RSI — ano',processoFamiliar:'N.º Processo Familiar',titular:'Titular',requerente:'Requerente',iniciativaPropria:'Iniciativa própria',iniciativaOutro:'Outro',outroQual:'Outro — qual',nome:'Nome',dataNascimento:'Data de Nascimento',naturalidade:'Naturalidade',biCc:'BI / CC',validadeDia:'Validade — dia',validadeMes:'Validade — mês',validadeAno:'Validade — ano',arquivo:'Arquivo de',estadoCivil:'Estado Civil',nacionalidade:'Nacionalidade',beneficiario:'Beneficiário n.º',contribuinte:'Contribuinte n.º',morada:'Morada',codigoPostal1:'Código Postal',codigoPostal2:'Código Postal — extensão',localidade:'Localidade',contactos:'Contactos',agregado1Nome:'Agregado 1 — Nome',agregado1Parentesco:'Agregado 1 — Parentesco',agregado1EstadoCivil:'Agregado 1 — Est. civil',agregado1DataNascimento:'Agregado 1 — Data Nas.',agregado1Profissao:'Agregado 1 — Profissão/Ensino',agregado1Niss:'Agregado 1 — NISS',observacoesAgregado:'Observações do agregado'
+})[k]||k;}
+function extractAndShow(){
+  scan.resultText=document.querySelector('#scanText').value;
+  const f=extractFields(scan.resultText),n=document.querySelector('#scanExtracted');n.dataset.fields=JSON.stringify(f);
+  n.innerHTML=Object.keys(f).length?`<h4>Campos sugeridos</h4>${Object.entries(f).map(([k,v])=>typeof v==='boolean'?`<label><span>${e(prettyKey(k))}</span><input data-key="${e(k)}" type="checkbox" ${v?'checked':''}></label>`:`<label><span>${e(prettyKey(k))}</span><input data-key="${e(k)}" value="${e(v)}"></label>`).join('')}`:'<p>Não encontrei campos com confiança suficiente. Podes corrigir o texto e tentar novamente.</p>';
+  n.querySelectorAll('input').forEach(i=>i.oninput=()=>{const obj=JSON.parse(n.dataset.fields||'{}');obj[i.dataset.key]=i.type==='checkbox'?i.checked:i.value;n.dataset.fields=JSON.stringify(obj);});
+}
 function fillForm(api){
-  const n=document.querySelector('#scanExtracted');const f=JSON.parse(n.dataset.fields||'{}');if(!Object.keys(f).length){extractAndShow();return;}
+  const n=document.querySelector('#scanExtracted');let f=JSON.parse(n.dataset.fields||'{}');if(!Object.keys(f).length){extractAndShow();f=JSON.parse(n.dataset.fields||'{}');if(!Object.keys(f).length)return;}
+  let applied=0;
   for(const [k,v] of Object.entries(f)){
     const target=FIELD_MAP[k]; if(!target)continue;
-    if(Array.isArray(target)){api.editor.formValues[target[0]]=v;} else api.editor.formValues[target]=v;
+    api.editor.formValues[target]=v; applied++;
   }
-  api.markDirty();api.renderAll();api.status('Campos reconhecidos pelo OCR aplicados à ficha. Confirma visualmente antes de guardar.');document.querySelector('#scannerModal').hidden=true;
+  api.markDirty();api.renderAll();
+  api.status(`${applied} campo(s) reconhecido(s) pelo OCR aplicados à ficha. Confirma visualmente antes de guardar.`);
+  document.querySelector('#scannerModal').hidden=true;
+  window.scrollTo({top:0,behavior:'smooth'});
 }
 function openSettings(){const d=document.querySelector('#ocrSettingsDialog');document.querySelector('#ocrEndpoint').value=localStorage.getItem('rjp.ocr.endpoint')||'';document.querySelector('#ocrToken').value=localStorage.getItem('rjp.ocr.token')||'';d.showModal();}
 

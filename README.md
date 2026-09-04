@@ -1,4 +1,4 @@
-# RJP PDF Editor V2.8 — WebApp Only
+# RJP PDF Editor V2.9 — OCR AutoFill
 
 Versão limpa apenas para WebApp/GitHub Pages.
 
@@ -32,3 +32,10 @@ npm run build
 - Campo multilinha clicável e invisível sob Observações do Agregado Familiar.
 - Mantém as linhas originais do PDF; sem caixa visível e sem texto cinzento/placeholder.
 - O conteúdo fica persistente no PDF guardado.
+
+
+## V2.9
+- OCR Pro reconhece os principais campos da página 1 e o primeiro elemento do agregado familiar.
+- Botão “Preencher ficha atual” aplica os campos reconhecidos diretamente aos campos AcroForm da ficha.
+- Reconhecimento de datas, checkboxes, processo familiar, identificação, morada, contactos, agregado e observações.
+- Painel de revisão permite corrigir cada valor antes de preencher.
