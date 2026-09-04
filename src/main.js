@@ -290,6 +290,21 @@ function renderEditsForPage(page,viewport,layer){
 
 async function setZoom(v){ editor.scale=clamp(v,.65,2.5); updateChrome(); if(editor.pdfjs) await renderAll(); persistSoon(); }
 
+// PDF StandardFonts usam WinAnsi. Normaliza símbolos Unicode comuns antes de gravar
+// para impedir erros como: WinAnsi cannot encode "☑" (0x2611).
+function pdfSafeText(value=''){
+  return String(value ?? '')
+    .replace(/[☑☒✓✔]/g, 'X')
+    .replace(/[☐□]/g, '')
+    .replace(/[–—]/g, '-')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/…/g, '...')
+    .normalize('NFKC')
+    // Helvetica/WinAnsi não suporta estes controlos/símbolos fora do intervalo útil.
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '');
+}
+
 async function savePdf(){
   if(!editor.pdfBytes)return; const btn=document.querySelector('#saveBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='A guardar…';
   try{
@@ -310,16 +325,16 @@ async function savePdf(){
     for(const [name,value] of Object.entries(editor.formValues)){
       const field=form.getFieldMaybe(name); if(!field) continue;
       try{
-        if(field instanceof PDFTextField) field.setText(String(value??''));
+        if(field instanceof PDFTextField) field.setText(pdfSafeText(value));
         else if(field instanceof PDFCheckBox) value?field.check():field.uncheck();
-        else if(field instanceof PDFDropdown || field instanceof PDFOptionList) field.select(String(value??''));
-        else if(field instanceof PDFRadioGroup && value) field.select(String(value));
+        else if(field instanceof PDFDropdown || field instanceof PDFOptionList) field.select(pdfSafeText(value));
+        else if(field instanceof PDFRadioGroup && value) field.select(pdfSafeText(value));
       }catch(err){ console.warn('Campo PDF',name,err); }
     }
     try{ form.updateFieldAppearances(font); }catch(e){ console.warn('Appearances',e); }
     const pages=doc.getPages();
     for(const e of editor.edits){ const p=pages[e.page-1]; if(!p)continue; if(e.mask) p.drawRectangle({x:e.x-1,y:e.y-1,width:e.w+2,height:e.h+2,color:rgb(1,1,1),borderWidth:0});
-      const text=e.kind==='check'?'X':String(e.text??''); if(!text)continue; const fs=clamp(Number(e.fontSize)||10,6,36); const maxWidth=Math.max(8,e.w-2); const lines=wrapText(text,font,fs,maxWidth); let yy=e.y+e.h-fs*1.05; for(const line of lines){ if(yy<e.y-fs*.2)break; p.drawText(line,{x:e.x+1,y:yy,size:fs,font,color:rgb(0,0,0)}); yy-=fs*1.18; }
+      const text=e.kind==='check'?'X':pdfSafeText(e.text); if(!text)continue; const fs=clamp(Number(e.fontSize)||10,6,36); const maxWidth=Math.max(8,e.w-2); const lines=wrapText(text,font,fs,maxWidth); let yy=e.y+e.h-fs*1.05; for(const line of lines){ if(yy<e.y-fs*.2)break; p.drawText(line,{x:e.x+1,y:yy,size:fs,font,color:rgb(0,0,0)}); yy-=fs*1.18; }
     }
     const out=await doc.save(); editor.pdfBytes=new Uint8Array(out); editor.edits=[]; editor.formValues={}; editor.undo=[]; editor.dirty=false; await dbSet('pdf',editor.pdfBytes); await dbSet('meta',{appSessionVersion:APP_SESSION_VERSION,fileName:editor.fileName,edits:[],formValues:{},scale:editor.scale});
     const savedName=editedFileName(editor.fileName);

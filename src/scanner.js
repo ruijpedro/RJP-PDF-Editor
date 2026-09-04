@@ -420,12 +420,38 @@ function prettyKey(k){
   const logical=({dataFichaDia:'Data — dia',dataFichaMes:'Data — mês',dataFichaAno:'Data — ano',jaRequereuRsi:'Já requereu RSI',dataRsiDia:'RSI — dia',dataRsiMes:'RSI — mês',dataRsiAno:'RSI — ano',processoFamiliar:'N.º Processo Familiar',titular:'Titular',requerente:'Requerente',iniciativaPropria:'Iniciativa própria',iniciativaOutro:'Outro',outroQual:'Outro — qual',nome:'Nome',dataNascimento:'Data de Nascimento',naturalidade:'Naturalidade',biCc:'BI / CC',validadeDia:'Validade — dia',validadeMes:'Validade — mês',validadeAno:'Validade — ano',arquivo:'Arquivo de',estadoCivil:'Estado Civil',nacionalidade:'Nacionalidade',beneficiario:'Beneficiário n.º',contribuinte:'Contribuinte n.º',morada:'Morada',codigoPostal1:'Código Postal',codigoPostal2:'Código Postal — extensão',localidade:'Localidade',contactos:'Contactos',agregado1Nome:'Agregado 1 — Nome',agregado1Parentesco:'Agregado 1 — Parentesco',agregado1EstadoCivil:'Agregado 1 — Est. civil',agregado1DataNascimento:'Agregado 1 — Data Nas.',agregado1Profissao:'Agregado 1 — Profissão/Ensino',agregado1Niss:'Agregado 1 — NISS',observacoesAgregado:'Observações do agregado'})[k];
   return logical||directFieldLabel(k);
 }
+// Opções Sim/Não são mutuamente exclusivas. Se o OCR espacial marcar ambas,
+// conserva a decisão textual quando existir; caso contrário evita preencher as duas.
+function normalizeExclusiveChecks(fields){
+  const pairs=[
+    ['P2_check_025','P2_check_026'], // Saúde
+    ['P2_check_027','P2_check_028'], // Isento
+    ['P2_check_040','P2_check_049'], // Atividade profissional
+    ['P2_check_051','P2_check_052'], // Centro de emprego
+    ['P2_check_057','P2_check_059'], // Carta condução
+    ['P2_check_060','P2_check_061'], // Carro próprio
+    ['P2_check_068','P2_check_069'], // Frequenta ensino
+    ['P3_check_088','P3_check_089'], // Rendimentos
+    ['P3_check_090','P3_check_091'], // Despesas
+    ['P4_check_096','P4_check_097'], // Habitação
+    ['P4_check_098','P4_check_099'], // Própria
+    ['P4_check_100','P4_check_101']  // Habitação social
+  ];
+  for(const [yes,no] of pairs){
+    if(fields[yes]===true && fields[no]===true){
+      // Ambiguidade: não inventar uma resposta. Deixa ambas por marcar para revisão.
+      fields[yes]=false; fields[no]=false;
+    }
+  }
+  return fields;
+}
+
 async function extractAndShow(){
   scan.resultText=document.querySelector('#scanText').value;
   const spatial=await extractSpatialTargetFields();
   const logicalTargets=logicalToTargets(extractFields(scan.resultText));
   // Regras por rótulo prevalecem onde são mais seguras; uma marca espacial verdadeira nunca é apagada por um falso negativo do OCR textual.
-  const f={...spatial}; for(const [k,v] of Object.entries(logicalTargets)){if(v===false&&f[k]===true)continue;f[k]=v;}
+  const f={...spatial}; for(const [k,v] of Object.entries(logicalTargets)){if(v===false&&f[k]===true)continue;f[k]=v;} normalizeExclusiveChecks(f);
   const n=document.querySelector('#scanExtracted'); n.dataset.fields=JSON.stringify(f);
   const entries=Object.entries(f).filter(([,v])=>typeof v==='boolean'||String(v??'').trim()!=='');
   const pages=new Set(entries.map(([k])=>TEMPLATE_FIELDS.find(x=>x.name===k)?.page).filter(x=>x!=null));
