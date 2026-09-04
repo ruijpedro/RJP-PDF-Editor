@@ -1,9 +1,6 @@
 import './style.css';
 import { PDFDocument, StandardFonts, rgb, PDFTextField, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Capacitor } from '@capacitor/core';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { initScanner } from './scanner.js';
 
@@ -11,7 +8,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
 
-const APP_SESSION_VERSION = '2.5-observacoes-celulas';
+const APP_SESSION_VERSION = '2.7-web-only';
 const DEFAULT_TEMPLATE_NAME = 'Ficha_atendimento_Patricia_PDF_PREENCHIVEL_SEM_ESPACO_RGPD.pdf';
 const DEFAULT_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/${DEFAULT_TEMPLATE_NAME}`;
 
@@ -26,8 +23,6 @@ const editor = {
   undo: [],
   selectedId: null,
   dirty: false,
-  native: Capacitor.isNativePlatform(),
-  platform: Capacitor.getPlatform(),
 };
 
 function uid(){ return crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`; }
@@ -63,13 +58,13 @@ function shell(){
       <span class="sep"></span>
       <button id="zoomOut">−</button><span id="zoomLabel">135%</span><button id="zoomIn">+</button>
       <span class="sep"></span>
-      <button id="saveBtn" class="primary" disabled>${editor.native?'Guardar / Partilhar':'Guardar PDF'}</button>
-      <button id="shareBtn" disabled>${editor.native?'Partilhar':'Partilhar'}</button>
+      <button id="saveBtn" class="primary" disabled>Guardar PDF</button>
+      <button id="shareBtn" disabled>Partilhar</button>
       <button id="closeBtn" disabled>Repor ficha</button>
     </div>
   </header>
   <div id="status" class="status">A carregar a Ficha de Atendimento...</div>
-  <main id="workspace" class="workspace empty"><div class="dropzone"><div class="dropicon">PDF</div><h2>Ficha de Atendimento</h2><p>A ficha abre automaticamente e fica editável em Web, Android e iPhone/iPad.</p></div></main>`;
+  <main id="workspace" class="workspace empty"><div class="dropzone"><div class="dropicon">PDF</div><h2>Ficha de Atendimento</h2><p>A ficha abre automaticamente na WebApp e fica pronta para edição.</p></div></main>`;
 }
 
 function bindUI(){
@@ -141,7 +136,7 @@ async function loadPdf(bytes,name='documento.pdf',fresh=false){
     if(fresh){ editor.edits=[]; editor.formValues={}; editor.undo=[]; editor.dirty=false; }
     editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise;
     updateChrome(); await renderAll(); persistSoon();
-    status(`PDF aberto: ${editor.pdfjs.numPages} página(s). ${editor.native?'No '+editor.platform+', usa Guardar / Partilhar para enviar para Ficheiros, iCloud Drive ou outras apps. ':''}Clica diretamente no texto para editar.`);
+    status(`PDF aberto: ${editor.pdfjs.numPages} página(s). Clica diretamente no texto para editar.`);
   }catch(e){ console.error(e); alert('Não foi possível abrir este PDF: '+e.message); status('Erro ao abrir PDF.'); }
 }
 
@@ -294,12 +289,8 @@ async function savePdf(){
     }
     const out=await doc.save(); editor.pdfBytes=new Uint8Array(out); editor.edits=[]; editor.formValues={}; editor.undo=[]; editor.dirty=false; await dbSet('pdf',editor.pdfBytes); await dbSet('meta',{appSessionVersion:APP_SESSION_VERSION,fileName:editor.fileName,edits:[],formValues:{},scale:editor.scale});
     const savedName=editedFileName(editor.fileName);
-    if(editor.native){
-      await nativeSaveAndShare(out,savedName);
-    }else{
-      downloadBytes(out,savedName);
-    }
-    editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise; await renderAll(); updateChrome(); status(editor.native?'PDF guardado e folha de partilha aberta. O documento continua aberto.':'PDF guardado. O documento continua aberto e podes continuar a editar.'); btn.textContent='Guardado ✓'; setTimeout(()=>btn.textContent=old,1500);
+    downloadBytes(out,savedName);
+    editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise; await renderAll(); updateChrome(); status('PDF guardado. O documento continua aberto e podes continuar a editar.'); btn.textContent='Guardado ✓'; setTimeout(()=>btn.textContent=old,1500);
   }catch(e){console.error(e);alert('Erro ao guardar PDF: '+e.message);status('Erro ao guardar.');}
   finally{btn.disabled=false;}
 }
@@ -308,31 +299,10 @@ function editedFileName(name='documento.pdf'){
   const base=String(name).replace(/\.pdf$/i,'').replace(/[\/:*?"<>|]+/g,'_').trim()||'documento';
   return `${base}_preenchido.pdf`;
 }
-function bytesToBase64(bytes){
-  let binary=''; const chunk=0x8000;
-  for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));
-  return btoa(binary);
-}
-function downloadBytes(bytes,name){
-  const blob=new Blob([bytes],{type:'application/pdf'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
-}
-async function nativeFileUri(bytes,name){
-  const result=await Filesystem.writeFile({path:name,data:bytesToBase64(bytes),directory:Directory.Cache,recursive:true});
-  return result.uri;
-}
-async function nativeSaveAndShare(bytes,name){
-  const uri=await nativeFileUri(bytes,name);
-  await Share.share({title:'RJP PDF Editor',text:'PDF editado',files:[uri],dialogTitle:'Guardar ou partilhar PDF'});
-}
 async function shareCurrentPdf(){
   if(!editor.pdfBytes)return;
   try{
     const name=editedFileName(editor.fileName);
-    if(editor.native){
-      await nativeSaveAndShare(editor.pdfBytes,name);
-      status('Folha de partilha aberta. Podes Guardar em Ficheiros, enviar por Mail, AirDrop, etc.');
-      return;
-    }
     if(navigator.share){
       const file=new File([editor.pdfBytes],name,{type:'application/pdf'});
       if(!navigator.canShare || navigator.canShare({files:[file]})){
