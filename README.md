@@ -1,27 +1,35 @@
-# RJP PDF Editor V2.2 - Ficha por defeito
+# RJP PDF Editor V2.4 — Scanner Pro
 
-Projeto único para WebApp, Android e iOS.
+WebApp + Android + iOS. Abre por defeito a Ficha de Atendimento sem o espaço em branco do RGPD e acrescenta um digitalizador de arquivo antigo.
 
-## Comportamento principal
-- Abre automaticamente `Ficha_atendimento_Patricia_PDF_PREENCHIVEL_SEM_ESPACO_RGPD.pdf` ao iniciar.
-- Os campos AcroForm da ficha ficam editáveis diretamente na app.
-- Mantém edição livre de texto, adicionar texto e marcações.
-- AutoSave da sessão no dispositivo/browser.
-- `Nova ficha` / `Repor ficha` volta ao modelo original em branco.
-- `Abrir outro PDF` continua disponível.
-- Guardar preserva o PDF e preenche os campos do formulário.
+## Scanner Pro
 
-## Plataformas
-- Web: GitHub Pages
-- Android: Capacitor / APK
-- iOS: Capacitor / Xcode / TestFlight
+- Fotografia direta com a câmara ou importação de imagens/PDF multipágina.
+- Miniaturas e processamento em lote.
+- Rodar, auto-recorte de margens e três perfis de melhoria: Manuscrito, Documento e Fotografia.
+- OCR local em português com Tesseract.js, com revisão obrigatória antes de preencher a ficha.
+- OCR Pro opcional via endpoint seguro (exemplo Google Cloud Vision em `backend/`).
+- Extração assistida de Nome, data de nascimento, naturalidade, BI/CC, estado civil, nacionalidade, NISS/beneficiário, NIF, morada, código postal e contactos.
+- Botão **Preencher ficha atual**; nada é gravado automaticamente sem revisão.
+- O editor PDF, Guardar/Partilhar, Web, Android e iOS continuam no mesmo projeto.
 
-O mesmo PDF base está em `public/templates/`, por isso é empacotado no build Web, Android e iOS.
+## Privacidade
+
+O OCR local processa no dispositivo/browser. O OCR Pro só envia a imagem quando o utilizador carrega explicitamente em **OCR Pro** e tiver configurado um endpoint. Para fichas com dados pessoais/sensíveis, valida internamente se o serviço cloud escolhido é adequado às regras da organização.
+
+## Build
+
+```bash
+npm install
+npm run build
+```
+
+GitHub Actions incluído para WebApp, Android e iOS.
 
 
-## V2.2
-Ficha padrão corrigida: a página RGPD inicia no topo da página, sem o grande espaço em branco. O documento padrão passa de 7 para 6 páginas, mantendo os campos editáveis; os campos de consentimento e assinatura foram reposicionados na nova página 6.
-
-
-## V2.2
-A sessão local é versionada. Ao publicar esta versão, sessões antigas são limpas automaticamente para impedir que o browser restaure a ficha anterior com o espaço em branco no RGPD.
+## Importação otimizada para portátil
+- Botão principal **Importar / OCR ficha antiga**.
+- Importação de vários PDFs/imagens de uma vez.
+- **Importar pasta** para lotes digitalizados guardados numa pasta.
+- Arrastar e largar PDFs/JPG/PNG/WebP/BMP diretamente na janela do scanner.
+- A câmara continua disponível, mas no PC a importação é agora o fluxo principal.

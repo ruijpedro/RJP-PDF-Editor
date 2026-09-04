@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { initScanner } from './scanner.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -52,6 +53,7 @@ function shell(){
     <div class="brand"><strong>RJP PDF Editor</strong><span id="docName">Nenhum PDF aberto</span></div>
     <div class="toolbar">
       <button id="newFormBtn" class="primary">Nova ficha</button>
+      <button id="scanBtn" class="scanner-main">📥 Importar / OCR ficha antiga</button>
       <label class="button">Abrir outro PDF<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
       <button id="editMode" class="active">Editar texto</button>
       <button id="addMode">Adicionar texto</button>
@@ -334,4 +336,4 @@ async function restore(){
   await openDefaultTemplate(true);
 }
 
-shell(); bindUI(); setMode('edit'); updateChrome(); restore();
+shell(); bindUI(); initScanner({editor,markDirty,renderAll,status}); setMode('edit'); updateChrome(); restore();
