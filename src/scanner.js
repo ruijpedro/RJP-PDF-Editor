@@ -44,9 +44,9 @@ function modal(){
         <select id="scanPreset"><option value="handwriting">Manuscrito</option><option value="document">Documento</option><option value="photo">Fotografia</option></select>
         <button id="scanEnhance">✨ Melhorar</button>
         <span class="sep"></span>
-        <button id="scanOcr" class="primary">OCR Local</button>
-        <button id="scanOcrPro">OCR Pro</button>
-        <button id="scanSettings">⚙ OCR Pro</button>
+        <button id="scanOcrPro" class="primary">OCR</button>
+        <button id="scanSettings" title="Configuração do OCR">⚙</button>
+        <button id="scanOcr" hidden aria-hidden="true">OCR Local</button>
       </div>
       <div id="scanStatus" class="scanner-status scan-dropzone">Arrasta para aqui PDFs ou imagens digitalizadas, ou usa “Importar ficheiros”.</div>
       <div class="scanner-body">
@@ -62,7 +62,7 @@ function modal(){
     </div>
   </div>
   <dialog id="ocrSettingsDialog" class="ocr-dialog">
-    <form method="dialog"><h3>OCR Pro — endpoint seguro</h3><p>Para manuscritos difíceis, podes ligar um proxy Google Cloud Vision/Document AI. A chave fica no servidor, nunca no GitHub.</p>
+    <form method="dialog"><h3>OCR Pro — endpoint seguro</h3><p>Para manuscritos, usa OCR Manuscrito Pro. O processamento recomendado é Google Cloud Vision DOCUMENT_TEXT_DETECTION através de um proxy seguro. A chave fica no servidor, nunca no GitHub.</p>
       <label>Endpoint<input id="ocrEndpoint" placeholder="https://script.google.com/macros/s/.../exec"></label>
       <label>Token do proxy<input id="ocrToken" type="password" autocomplete="off"></label>
       <div class="dialog-actions"><button value="cancel">Cancelar</button><button id="ocrSaveSettings" value="default" class="primary">Guardar</button></div>
@@ -80,7 +80,7 @@ async function fileToPages(file){
     const bytes=new Uint8Array(await file.arrayBuffer());
     const doc=await pdfjsLib.getDocument({data:bytes}).promise; const out=[];
     for(let p=1;p<=doc.numPages;p++){
-      const pg=await doc.getPage(p), vp=pg.getViewport({scale:2}); const c=document.createElement('canvas'); c.width=vp.width;c.height=vp.height;
+      const pg=await doc.getPage(p), vp=pg.getViewport({scale:3}); const c=document.createElement('canvas'); c.width=vp.width;c.height=vp.height;
       await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
       out.push({id:crypto.randomUUID(),name:`${file.name} — pág. ${p}`,dataUrl:c.toDataURL('image/jpeg',.95),rotation:0,enhanced:false});
     } return out;
@@ -112,8 +112,22 @@ function otsu(data){
 }
 function applyPreset(c,preset){
   const x=c.getContext('2d'),im=x.getImageData(0,0,c.width,c.height),d=im.data;
-  if(preset==='photo'){for(let i=0;i<d.length;i+=4){for(let k=0;k<3;k++)d[i+k]=Math.max(0,Math.min(255,(d[i+k]-128)*1.12+138));}}
-  else {const t=otsu(d);for(let i=0;i<d.length;i+=4){let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];if(preset==='handwriting'){y=(y-128)*1.55+145;y=y<t*1.08?0:255;}else{y=(y-128)*1.3+140;y=y<t?18:250;}d[i]=d[i+1]=d[i+2]=Math.max(0,Math.min(255,y));}}
+  if(preset==='photo'){
+    for(let i=0;i<d.length;i+=4) for(let k=0;k<3;k++) d[i+k]=Math.max(0,Math.min(255,(d[i+k]-128)*1.12+136));
+  } else if(preset==='handwriting'){
+    // Manuscrito: NÃO binarizar. Lápis/esferográfica clara desaparecem com threshold agressivo.
+    // Mantém tons finos, converte para cinzento e aumenta contraste moderadamente.
+    for(let i=0;i<d.length;i+=4){
+      let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+      y=(y-128)*1.28+142;
+      // clareia fundo sem apagar traços leves
+      if(y>215) y=215+(y-215)*0.65;
+      d[i]=d[i+1]=d[i+2]=Math.max(0,Math.min(255,y));
+    }
+  } else {
+    const t=otsu(d);
+    for(let i=0;i<d.length;i+=4){let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];y=(y-128)*1.3+140;y=y<t?18:250;d[i]=d[i+1]=d[i+2]=Math.max(0,Math.min(255,y));}
+  }
   x.putImageData(im,0,0);
 }
 function autoCropCanvas(c){
@@ -138,9 +152,56 @@ async function runLocalOcr(){
   }catch(err){console.error(err);setStatus('Falha no OCR local: '+err.message);alert('OCR local falhou. Para manuscritos difíceis, configura OCR Pro.');}
   finally{scan.busy=false;btn.disabled=false;}
 }
+async function canvasVariantDataUrls(){
+  const c=document.querySelector('#scanCanvas');
+  const original=c.toDataURL('image/jpeg',.97);
+  const tmp=document.createElement('canvas'); tmp.width=c.width; tmp.height=c.height;
+  tmp.getContext('2d').drawImage(c,0,0);
+  applyPreset(tmp,'handwriting');
+  const enhanced=tmp.toDataURL('image/jpeg',.97);
+  return [original, enhanced];
+}
+
+async function callProEndpoint(endpoint,token,dataUrl){
+  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token,imageBase64:dataUrl.split(',')[1],mimeType:'image/jpeg',languageHints:['pt','pt-PT'],mode:'handwriting'})});
+  const data=await response.json().catch(()=>({error:`Resposta inválida (HTTP ${response.status})`}));
+  if(!response.ok && !data.error) throw new Error(`HTTP ${response.status}`);
+  if(data.error) throw new Error(data.error);
+  return data;
+}
+
+function scoreOcrText(text=''){
+  const t=text.trim(); if(!t) return 0;
+  const letters=(t.match(/[A-Za-zÀ-ÿ0-9]/g)||[]).length;
+  const bad=(t.match(/[|{}<>~^`]/g)||[]).length;
+  const words=(t.match(/\b[\p{L}\d]{2,}\b/gu)||[]).length;
+  return letters + words*3 - bad*2;
+}
+
 async function runProOcr(){
-  if(!scan.pages.length)return;const endpoint=localStorage.getItem('rjp.ocr.endpoint')||'',token=localStorage.getItem('rjp.ocr.token')||'';if(!endpoint){openSettings();return;}
-  try{scan.busy=true;let all='';for(let i=0;i<scan.pages.length;i++){scan.active=i;await drawActive();setStatus(`OCR Pro: página ${i+1}/${scan.pages.length}…`);const c=document.querySelector('#scanCanvas');const dataUrl=c.toDataURL('image/jpeg',.92);const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token,imageBase64:dataUrl.split(',')[1],mimeType:'image/jpeg',languageHints:['pt']})});if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.json();if(data.error)throw new Error(data.error);all+=(i?`\n\n--- PÁGINA ${i+1} ---\n`:'')+(data.text||'');}scan.resultText=all.trim();document.querySelector('#scanText').value=scan.resultText;document.querySelector('#scanConfidence').textContent='OCR Pro';extractAndShow();setStatus('OCR Pro concluído. Revê os dados reconhecidos.');}catch(err){console.error(err);alert('OCR Pro: '+err.message);setStatus('Falha no OCR Pro.');}finally{scan.busy=false;}
+  if(!scan.pages.length)return;
+  const endpoint=localStorage.getItem('rjp.ocr.endpoint')||'',token=localStorage.getItem('rjp.ocr.token')||'';
+  if(!endpoint){openSettings();return;}
+  try{
+    scan.busy=true;document.querySelector('#scanOcrPro').disabled=true;
+    let all='';
+    for(let i=0;i<scan.pages.length;i++){
+      scan.active=i;await drawActive();setStatus(`OCR manuscrito Pro: página ${i+1}/${scan.pages.length} — análise multipass…`);
+      const variants=await canvasVariantDataUrls();
+      const results=[];
+      for(const dataUrl of variants){
+        try{results.push(await callProEndpoint(endpoint,token,dataUrl));}catch(e){console.warn('OCR variant falhou',e);}
+      }
+      if(!results.length) throw new Error('O serviço OCR Pro não devolveu resultado.');
+      results.sort((a,b)=>scoreOcrText(b.text)-scoreOcrText(a.text));
+      const best=results[0];
+      all+=(i?`\n\n--- PÁGINA ${i+1} ---\n`:'')+(best.text||'');
+    }
+    scan.resultText=all.trim();document.querySelector('#scanText').value=scan.resultText;
+    document.querySelector('#scanConfidence').textContent='OCR Manuscrito Pro';
+    extractAndShow();setStatus('OCR manuscrito concluído. Revê os campos assinalados antes de preencher a ficha.');
+  }catch(err){console.error(err);alert('OCR Manuscrito Pro: '+err.message);setStatus('Falha no OCR Manuscrito Pro. Verifica endpoint/token e qualidade do scan.');}
+  finally{scan.busy=false;document.querySelector('#scanOcrPro').disabled=false;}
 }
 function lineValue(text,label,nextLabels=[]){
   const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');const stop=nextLabels.length?`(?=${nextLabels.map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')}|$)`:'$';const m=text.match(new RegExp(`${escaped}\\s*[:\-]?\\s*([^\\n]{1,160}?)${stop}`,'i'));return m?.[1]?.replace(/[_]{2,}/g,' ').trim()||'';
@@ -187,7 +248,7 @@ export function initScanner(api){
   document.querySelector('#scanAutoCrop').onclick=async()=>{const ok=autoCropCanvas(document.querySelector('#scanCanvas'));if(ok){await commitCanvas();setStatus('Recorte automático aplicado.');}else setStatus('Não consegui detetar margens com segurança; mantive a página inteira.');};
   document.querySelector('#scanPreset').onchange=e=>scan.preset=e.target.value;
   document.querySelector('#scanEnhance').onclick=async()=>{if(!scan.pages.length)return;applyPreset(document.querySelector('#scanCanvas'),scan.preset);await commitCanvas();setStatus(`Melhoria “${scan.preset}” aplicada.`);};
-  document.querySelector('#scanOcr').onclick=runLocalOcr;document.querySelector('#scanOcrPro').onclick=runProOcr;document.querySelector('#scanSettings').onclick=openSettings;
+  document.querySelector('#scanOcr').onclick=runLocalOcr;document.querySelector('#scanOcrPro').onclick=async()=>{const endpoint=localStorage.getItem('rjp.ocr.endpoint')||'';if(endpoint){await runProOcr();}else{openSettings();}};document.querySelector('#scanSettings').onclick=openSettings;
   document.querySelector('#scanExtract').onclick=extractAndShow;document.querySelector('#scanFill').onclick=()=>fillForm(api);document.querySelector('#scanCopy').onclick=()=>navigator.clipboard?.writeText(document.querySelector('#scanText').value);
   document.querySelector('#scanText').oninput=e=>{scan.resultText=e.target.value;};
   document.querySelector('#ocrSaveSettings').onclick=()=>{localStorage.setItem('rjp.ocr.endpoint',document.querySelector('#ocrEndpoint').value.trim());localStorage.setItem('rjp.ocr.token',document.querySelector('#ocrToken').value);};

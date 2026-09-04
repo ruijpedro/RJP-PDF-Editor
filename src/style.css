@@ -9,7 +9,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 
 /* Campos AcroForm reais do PDF */
 .form-layer{position:absolute;inset:0;z-index:8;pointer-events:none}
-.form-layer input,.form-layer textarea,.form-layer select{position:absolute;pointer-events:auto;margin:0;border:1px solid transparent;background:rgba(255,255,255,.88);color:#111;font-family:Arial,Helvetica,sans-serif;padding:1px 3px;border-radius:2px;outline:none;line-height:1.05}
+.form-layer input,.form-layer textarea,.form-layer select{position:absolute;pointer-events:auto;margin:0;box-sizing:border-box;border:1px solid rgba(11,111,97,.20);background:rgba(255,255,255,.72);color:#111;font-family:Arial,Helvetica,sans-serif;padding:1px 3px;border-radius:2px;outline:none;line-height:1.05}
 .form-layer textarea{resize:none;overflow:auto}
 .form-layer input:focus,.form-layer textarea:focus,.form-layer select:focus{border-color:#0b6f61;background:#fff;box-shadow:0 0 0 2px #0b6f6130}
 .form-layer .pdf-form-checkbox{padding:0;appearance:auto;background:transparent;accent-color:#0b6f61}
@@ -22,3 +22,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 .scan-dropzone{border:2px dashed #9aa7b4;border-radius:10px;padding:10px 14px;transition:.15s;background:#f8fafc}
 .scan-dropzone.drag{border-color:#0f766e;background:#ecfdf5;box-shadow:0 0 0 3px rgba(15,118,110,.08)}
 @media (min-width:900px){.scanner-actions .primary{font-weight:700}.scanner-main{font-weight:700}}
+
+/* Células das zonas de observações: ficam discretamente visíveis no editor, mas não alteram o PDF impresso. */
+.form-layer .observation-cell,.form-layer [data-field="P3_texto_092"],.form-layer [data-field="P3_texto_093"],.form-layer [data-field="P3_texto_094"],.form-layer [data-field="P3_texto_095"]{border:1px solid rgba(11,111,97,.34);background:rgba(239,250,247,.50)}
+.form-layer .observation-cell:hover,.form-layer [data-field^="P3_texto_09"]:hover{border-color:#0b6f61;background:#fff}

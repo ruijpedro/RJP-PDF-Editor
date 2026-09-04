@@ -1,4 +1,9 @@
-# RJP PDF Editor V2.4 — Scanner Pro
+## V2.6.1 — Botão OCR simplificado
+- Interface com um único botão principal **OCR**.
+- O OCR manuscrito Pro é usado quando o endpoint está configurado.
+- A configuração fica no botão ⚙.
+
+# RJP PDF Editor V2.5 — Scanner Pro
 
 WebApp + Android + iOS. Abre por defeito a Ficha de Atendimento sem o espaço em branco do RGPD e acrescenta um digitalizador de arquivo antigo.
 
@@ -33,3 +38,19 @@ GitHub Actions incluído para WebApp, Android e iOS.
 - **Importar pasta** para lotes digitalizados guardados numa pasta.
 - Arrastar e largar PDFs/JPG/PNG/WebP/BMP diretamente na janela do scanner.
 - A câmara continua disponível, mas no PC a importação é agora o fluxo principal.
+
+
+## V2.5 - correção Observações Situação Económica
+- Repõe as quatro células editáveis de Observações da página 3.
+- Mostra os campos AcroForm com contorno discreto para ser claro onde se escreve.
+- Inclui fallback por coordenadas para os quatro campos P3_texto_092 a P3_texto_095.
+- Invalida a sessão antiga para evitar cache de layout anterior.
+
+
+## V2.6 — OCR Manuscrito Pro
+- OCR Manuscrito Pro passa a ser o botão principal para fichas manuscritas.
+- OCR local/Tesseract fica identificado como adequado sobretudo a texto impresso.
+- PDF importado é renderizado a 3× para preservar traços finos.
+- O modo manuscrito deixa de binarizar agressivamente a imagem, evitando apagar lápis/esferográfica clara.
+- OCR Pro usa duas passagens (imagem original + melhorada) e escolhe automaticamente o resultado mais consistente.
+- Language hints: pt / pt-PT.

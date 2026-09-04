@@ -11,7 +11,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
 
-const APP_SESSION_VERSION = '2.2-sem-espaco-rgpd';
+const APP_SESSION_VERSION = '2.5-observacoes-celulas';
 const DEFAULT_TEMPLATE_NAME = 'Ficha_atendimento_Patricia_PDF_PREENCHIVEL_SEM_ESPACO_RGPD.pdf';
 const DEFAULT_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/${DEFAULT_TEMPLATE_NAME}`;
 
@@ -176,7 +176,8 @@ async function renderPage(pageNum,ws){
 
 async function renderFormFields(pdfPage,pageNum,viewport,layer){
   let annotations=[];
-  try{ annotations=await pdfPage.getAnnotations({intent:'display'}); }catch(e){ console.warn('Form annotations',e); return; }
+  try{ annotations=await pdfPage.getAnnotations({intent:'display'}); }catch(e){ console.warn('Form annotations',e); annotations=[]; }
+  const renderedFields=new Set();
   for(const ann of annotations){
     if(ann.subtype!=='Widget' || !ann.fieldName || !ann.rect) continue;
     const rect=viewport.convertToViewportRectangle(ann.rect);
@@ -204,6 +205,30 @@ async function renderFormFields(pdfPage,pageNum,viewport,layer){
     Object.assign(el.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`});
     if(ann.fieldType==='Tx') el.style.fontSize=`${Math.max(8,Math.min(16,height*.58))}px`;
     layer.appendChild(el);
+    renderedFields.add(ann.fieldName);
+  }
+
+  // Fallback robusto para as 4 células de Observações da Situação Económica.
+  // Alguns viewers/PDF.js podem omitir widgets muito baixos; estas coordenadas
+  // vêm do AcroForm do modelo e garantem que continuam sempre editáveis.
+  if(pageNum===3){
+    const obsFallback=[
+      ['P3_texto_092',[141.0,111.36096,509.0,122.21698]],
+      ['P3_texto_093',[85.15,95.91095,509.15,106.76697]],
+      ['P3_texto_094',[85.15,82.11096,509.15,92.96698]],
+      ['P3_texto_095',[85.15,68.310977,509.15,79.16699]],
+    ];
+    for(const [name,pdfRect] of obsFallback){
+      if(renderedFields.has(name)) continue;
+      const rect=viewport.convertToViewportRectangle(pdfRect);
+      const left=Math.min(rect[0],rect[2]), top=Math.min(rect[1],rect[3]);
+      const width=Math.max(8,Math.abs(rect[2]-rect[0])), height=Math.max(8,Math.abs(rect[3]-rect[1]));
+      const el=document.createElement('input'); el.type='text'; el.className='pdf-form-text observation-cell';
+      el.value=(editor.formValues[name]??'').toString(); el.dataset.field=name; el.title='Observações'; el.spellcheck=false;
+      Object.assign(el.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`,fontSize:`${Math.max(8,Math.min(16,height*.58))}px`});
+      el.addEventListener('input',()=>{editor.formValues[name]=el.value; markDirty();});
+      layer.appendChild(el);
+    }
   }
 }
 
