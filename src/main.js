@@ -203,6 +203,29 @@ async function renderFormFields(pdfPage,pageNum,viewport,layer){
     renderedFields.add(ann.fieldName);
   }
 
+  // Campo invisível multilinha sob "Observações" do Agregado Familiar (página 1).
+  // Mantém apenas as linhas originais impressas no PDF; não desenha caixa nem placeholder.
+  if(pageNum===1){
+    const name='P1_observacoes_agregado';
+    if(!renderedFields.has(name)){
+      // Coordenadas PDF aproximadas da zona das linhas originais abaixo do título Observações.
+      const pdfRect=[54.0,120.0,541.0,286.0];
+      const rect=viewport.convertToViewportRectangle(pdfRect);
+      const left=Math.min(rect[0],rect[2]), top=Math.min(rect[1],rect[3]);
+      const width=Math.max(8,Math.abs(rect[2]-rect[0])), height=Math.max(8,Math.abs(rect[3]-rect[1]));
+      const el=document.createElement('textarea');
+      el.className='pdf-form-text transparent-notes-field';
+      el.value=(editor.formValues[name]??'').toString();
+      el.dataset.field=name;
+      el.title='Observações do Agregado Familiar';
+      el.spellcheck=true;
+      el.placeholder='';
+      Object.assign(el.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`,fontSize:`${Math.max(9,10*editor.scale)}px`});
+      el.addEventListener('input',()=>{editor.formValues[name]=el.value; markDirty();});
+      layer.appendChild(el);
+    }
+  }
+
   // Fallback robusto para as 4 células de Observações da Situação Económica.
   // Alguns viewers/PDF.js podem omitir widgets muito baixos; estas coordenadas
   // vêm do AcroForm do modelo e garantem que continuam sempre editáveis.
@@ -273,6 +296,17 @@ async function savePdf(){
     const doc=await PDFDocument.load(editor.pdfBytes,{ignoreEncryption:false});
     const form=doc.getForm();
     const font=await doc.embedFont(StandardFonts.Helvetica);
+    // Garante que o campo invisível de Observações da página 1 fica persistente no PDF guardado.
+    if(Object.prototype.hasOwnProperty.call(editor.formValues,'P1_observacoes_agregado')){
+      try{
+        let f=form.getTextField('P1_observacoes_agregado');
+      }catch(_){
+        const f=form.createTextField('P1_observacoes_agregado');
+        f.enableMultiline();
+        const pg=doc.getPages()[0];
+        f.addToPage(pg,{x:54,y:120,width:487,height:166,borderWidth:0,textColor:rgb(0,0,0),backgroundColor:rgb(1,1,1),borderColor:rgb(1,1,1)});
+      }
+    }
     for(const [name,value] of Object.entries(editor.formValues)){
       const field=form.getFieldMaybe(name); if(!field) continue;
       try{

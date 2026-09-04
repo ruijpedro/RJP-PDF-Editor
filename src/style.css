@@ -26,3 +26,20 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 /* Células das zonas de observações: ficam discretamente visíveis no editor, mas não alteram o PDF impresso. */
 .form-layer .observation-cell,.form-layer [data-field="P3_texto_092"],.form-layer [data-field="P3_texto_093"],.form-layer [data-field="P3_texto_094"],.form-layer [data-field="P3_texto_095"]{border:1px solid rgba(11,111,97,.34);background:rgba(239,250,247,.50)}
 .form-layer .observation-cell:hover,.form-layer [data-field^="P3_texto_09"]:hover{border-color:#0b6f61;background:#fff}
+
+/* Campo de Observações invisível: preserva as linhas impressas do PDF. */
+.transparent-notes-field{
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  resize: none !important;
+  padding: 2px 0 !important;
+  color: #111 !important;
+  line-height: 1.55 !important;
+}
+.transparent-notes-field:focus{
+  background: rgba(255,255,255,.03) !important;
+  outline: 1px dashed rgba(13,148,136,.28) !important;
+  outline-offset: 1px;
+}

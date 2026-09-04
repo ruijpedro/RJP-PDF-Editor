@@ -1,4 +1,4 @@
-# RJP PDF Editor V2.7 — WebApp Only
+# RJP PDF Editor V2.8 — WebApp Only
 
 Versão limpa apenas para WebApp/GitHub Pages.
 
@@ -26,3 +26,9 @@ npm run dev
 ```bash
 npm run build
 ```
+
+
+## V2.8
+- Campo multilinha clicável e invisível sob Observações do Agregado Familiar.
+- Mantém as linhas originais do PDF; sem caixa visível e sem texto cinzento/placeholder.
+- O conteúdo fica persistente no PDF guardado.
