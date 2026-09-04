@@ -8,7 +8,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
 
-const APP_SESSION_VERSION = '2.9-ocr-fill';
+const APP_SESSION_VERSION = '3.0-ocr-all-pages';
 const DEFAULT_TEMPLATE_NAME = 'Ficha_atendimento_Patricia_PDF_PREENCHIVEL_SEM_ESPACO_RGPD.pdf';
 const DEFAULT_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/${DEFAULT_TEMPLATE_NAME}`;
 

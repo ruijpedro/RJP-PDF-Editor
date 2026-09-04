@@ -1,41 +1,35 @@
-# RJP PDF Editor V2.9 — OCR AutoFill
+# RJP PDF Editor V3.0 — OCR AutoFill Todas as Páginas
 
-Versão limpa apenas para WebApp/GitHub Pages.
+WebApp para GitHub Pages com ficha por defeito, edição PDF e OCR manuscrito Google Cloud Vision através do proxy seguro.
 
-## Inclui
-- Ficha de Atendimento corrigida como documento padrão.
-- Edição de campos PDF e texto livre.
-- Guardar/partilhar PDF no browser.
-- Importar ficheiros e pasta para OCR.
-- OCR local e suporte OCR Pro através do proxy em `backend/`.
-- Correção das células de Observações da Situação Económica.
-- Apenas o workflow `.github/workflows/webapp.yml`.
+## V3.0
+- OCR Pro processa todas as páginas importadas.
+- Usa `fullTextAnnotation` e as coordenadas do Google Vision para associar escrita manuscrita aos campos da ficha.
+- Preenche campos das páginas 1, 2, 3, 4 e 6, incluindo tabelas de agregado, rendimentos/despesas, saúde, trabalho, escola, habitação, observações e consentimento.
+- Deteta checkboxes marcadas pela imagem da ficha.
+- Mantém revisão dos valores antes de **Preencher ficha atual**.
+- A página RGPD sem campos mantém-se intacta.
+- Sessão V3.0 separada para não recuperar dados/layout antigos.
+
+## OCR partilhado em vários PCs
+A chave `VISION_API_KEY` continua **apenas no Apps Script**. Nunca a coloques no GitHub.
+
+Para que outros PCs abram a WebApp já com o OCR configurado, podes preencher antes de publicar:
+
+`public/ocr-config.json`
+```json
+{
+  "endpoint": "https://script.google.com/macros/s/SEU_ID/exec",
+  "token": "O_MESMO_PROXY_TOKEN_DO_APPS_SCRIPT"
+}
+```
+
+O `PROXY_TOKEN` ficará visível no frontend se o colocares nesse ficheiro; serve apenas de barreira do proxy. A API key Google permanece protegida nas Propriedades do Script. Para maior segurança pública, deixa o ficheiro vazio e configura pelo botão ⚙ em cada PC.
 
 ## GitHub Pages
-1. Carregar todo o conteúdo deste ZIP para a raiz do repositório.
-2. Em **Settings → Pages**, escolher **GitHub Actions**.
-3. Fazer push para `main` ou executar manualmente o workflow **WebApp - GitHub Pages**.
+1. Carrega todo o conteúdo do ZIP na raiz do repositório.
+2. Em **Settings → Pages**, escolhe **GitHub Actions**.
+3. Faz push para `main` ou executa manualmente **WebApp - GitHub Pages**.
 
-## Desenvolvimento local
-```bash
-npm install
-npm run dev
-```
-
-## Build
-```bash
-npm run build
-```
-
-
-## V2.8
-- Campo multilinha clicável e invisível sob Observações do Agregado Familiar.
-- Mantém as linhas originais do PDF; sem caixa visível e sem texto cinzento/placeholder.
-- O conteúdo fica persistente no PDF guardado.
-
-
-## V2.9
-- OCR Pro reconhece os principais campos da página 1 e o primeiro elemento do agregado familiar.
-- Botão “Preencher ficha atual” aplica os campos reconhecidos diretamente aos campos AcroForm da ficha.
-- Reconhecimento de datas, checkboxes, processo familiar, identificação, morada, contactos, agregado e observações.
-- Painel de revisão permite corrigir cada valor antes de preencher.
+## Teste recomendado
+Importa uma ficha antiga completa (todas as páginas), executa **OCR**, revê os campos sugeridos e carrega **Preencher ficha atual**. Percorre todas as páginas da ficha antes de Guardar PDF.

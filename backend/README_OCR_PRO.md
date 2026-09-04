@@ -1,12 +1,16 @@
-# OCR Pro opcional — Google Cloud Vision
+# RJP OCR Proxy — Google Cloud Vision
 
-O RJP Scanner Pro funciona sem servidor através de Tesseract.js. Para manuscritos difíceis, podes ligar um endpoint Google Cloud Vision sem expor a chave no GitHub.
+O Apps Script usa duas **Propriedades do script**:
 
-1. Ativa **Cloud Vision API** no projeto Google Cloud.
-2. Cria uma API key e restringe-a à Cloud Vision API.
-3. Cria um projeto Google Apps Script e cola `google-vision-proxy.gs`.
-4. Em **Definições do projeto → Propriedades do script**, cria `GOOGLE_VISION_API_KEY` e `RJP_OCR_TOKEN`.
-5. Publica como Web App e copia o URL `/exec`.
-6. Na app: **Digitalizar ficha antiga → ⚙ OCR Pro** e guarda endpoint + token.
+- `VISION_API_KEY` — chave Google Cloud restrita à Cloud Vision API.
+- `PROXY_TOKEN` — token/password partilhado com a WebApp.
 
-Não coloques a chave Google no `src/`, no GitHub nem em `localStorage`. A app guarda apenas o URL do proxy e o token de acesso localmente no dispositivo.
+Publicar como **Aplicação Web**, executar como **Eu** e usar o URL terminado em `/exec`.
+
+Teste GET esperado:
+
+```json
+{"ok":true,"service":"RJP OCR Proxy","status":"online"}
+```
+
+O proxy aceita `imageBase64` e devolve `text` + `fullTextAnnotation`. A V3.0 usa as coordenadas da anotação para associar o manuscrito aos campos de todas as páginas da ficha.
