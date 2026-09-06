@@ -1,7 +1,7 @@
 {
-  "name": "rjp-pdf-editor-webapp",
+  "name": "rjp-pdf-editor-universal",
   "private": true,
-  "version": "3.0.2",
+  "version": "4.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "pdf-lib": "1.17.1",
-    "pdfjs-dist": "5.4.149",
-    "tesseract.js": "6.0.1"
+    "pdfjs-dist": "5.4.149"
   },
   "devDependencies": {
     "vite": "7.1.3"

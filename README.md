@@ -1,41 +1,24 @@
-## V3.0.2 — correção Guardar PDF
+# RJP PDF Editor Universal V4.1
 
-- Corrige `downloadBytes is not defined`.
-- Mantém a correção WinAnsi/checkboxes e OCR multipágina.
-- O PDF é descarregado por Blob/Object URL no browser.
+WebApp genérica, sem ficha/modelo incorporado.
 
-# RJP PDF Editor V3.0 — OCR AutoFill Todas as Páginas
+## Funções
+- Abrir qualquer PDF.
+- Editar campos AcroForm existentes.
+- Clicar em texto existente e substituí-lo.
+- `Tornar editável`: converte linhas de texto em campos PDF editáveis persistentes.
+- Adicionar texto e marcações.
+- OCR para páginas digitalizadas através do proxy Google Vision já usado no projeto.
+- Guardar como `*_EDITAVEL.pdf` mantendo os novos campos editáveis.
+- AutoSave local da sessão.
 
-WebApp para GitHub Pages com ficha por defeito, edição PDF e OCR manuscrito Google Cloud Vision através do proxy seguro.
-
-## V3.0
-- OCR Pro processa todas as páginas importadas.
-- Usa `fullTextAnnotation` e as coordenadas do Google Vision para associar escrita manuscrita aos campos da ficha.
-- Preenche campos das páginas 1, 2, 3, 4 e 6, incluindo tabelas de agregado, rendimentos/despesas, saúde, trabalho, escola, habitação, observações e consentimento.
-- Deteta checkboxes marcadas pela imagem da ficha.
-- Mantém revisão dos valores antes de **Preencher ficha atual**.
-- A página RGPD sem campos mantém-se intacta.
-- Sessão V3.0 separada para não recuperar dados/layout antigos.
-
-## OCR partilhado em vários PCs
-A chave `VISION_API_KEY` continua **apenas no Apps Script**. Nunca a coloques no GitHub.
-
-Para que outros PCs abram a WebApp já com o OCR configurado, podes preencher antes de publicar:
-
-`public/ocr-config.json`
-```json
-{
-  "endpoint": "https://script.google.com/macros/s/SEU_ID/exec",
-  "token": "O_MESMO_PROXY_TOKEN_DO_APPS_SCRIPT"
-}
-```
-
-O `PROXY_TOKEN` ficará visível no frontend se o colocares nesse ficheiro; serve apenas de barreira do proxy. A API key Google permanece protegida nas Propriedades do Script. Para maior segurança pública, deixa o ficheiro vazio e configura pelo botão ⚙ em cada PC.
+## OCR
+Na WebApp usa `⚙ OCR` para indicar o endpoint `/exec` e o `PROXY_TOKEN`.
+A `VISION_API_KEY` continua apenas nas propriedades do Apps Script.
 
 ## GitHub Pages
-1. Carrega todo o conteúdo do ZIP na raiz do repositório.
-2. Em **Settings → Pages**, escolhe **GitHub Actions**.
-3. Faz push para `main` ou executa manualmente **WebApp - GitHub Pages**.
+O workflow `.github/workflows/webapp.yml` publica automaticamente o `dist`.
 
-## Teste recomendado
-Importa uma ficha antiga completa (todas as páginas), executa **OCR**, revê os campos sugeridos e carrega **Preencher ficha atual**. Percorre todas as páginas da ficha antes de Guardar PDF.
+
+## V4.1 — Tipografia dos campos
+Seleciona um campo de texto do PDF ou um campo criado pelo editor e altera **Fonte** e **Tamanho** na barra superior. Inclui Helvetica, Times Roman e Courier, com variantes negrito/itálico. Os valores são gravados nas aparências AcroForm do próprio PDF.
