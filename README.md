@@ -1,34 +1,21 @@
-# RJP PDF Editor V4.2 — WebApp + Android APK
+# RJP PDF Editor V4.2.2 — Web + Android
 
-Editor universal de PDF. Abre PDFs sem modelo pré-carregado, permite criar/editar campos, alterar fonte e tamanho, usar OCR configurável e guardar novamente um PDF editável.
+Versão universal do editor PDF com um único workflow GitHub Actions.
 
-## WebApp
+## GitHub Actions
+Existe apenas:
 
-O workflow `.github/workflows/webapp.yml` publica a pasta `dist` no GitHub Pages.
+`.github/workflows/build.yml`
 
-## Android APK
+Esse workflow:
+- compila e publica a WebApp no GitHub Pages;
+- compila o APK Android;
+- usa Node 22 e Java 21;
+- não usa `cache: npm`, evitando o erro `Some specified paths were not resolved, unable to cache dependencies`.
 
-O workflow `.github/workflows/android.yml` cria automaticamente um projeto Android com Capacitor e compila um APK instalável de depuração.
+## APK
+Depois de um build com sucesso:
+**Actions → RJP PDF Editor - Web + Android → Artifacts → RJP-PDF-Editor-Android-v4.2.2**
 
-### Como gerar o APK no GitHub
-
-1. Carrega todo o conteúdo deste ZIP na raiz do repositório.
-2. Abre **Actions → Android APK**.
-3. Escolhe **Run workflow** (ou faz push para `main`).
-4. Quando terminar, abre a execução e descarrega o artifact **RJP-PDF-Editor-Android-v4.2**.
-5. Dentro do artifact está `RJP-PDF-Editor-v4.2-debug.apk`.
-
-O APK usa o mesmo código da WebApp. O identificador Android é `pt.rjp.pdfeditor`.
-
-## Desenvolvimento local
-
-```bash
-npm install
-npm run dev
-```
-
-Para sincronizar um projeto Android já existente localmente:
-
-```bash
-npm run android:sync
-```
+## Importante ao atualizar um repositório antigo
+Apaga os workflows antigos dentro de `.github/workflows/` e deixa apenas `build.yml`.
