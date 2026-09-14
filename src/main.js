@@ -9,7 +9,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
-const APP_SESSION_VERSION = '4.5-image-insert-clean-mask';
+const APP_SESSION_VERSION = '4.6-responsive-image-editor';
 
 const editor = {
   pdfBytes: null,
@@ -33,58 +33,51 @@ const clamp = (n,min,max) => Math.max(min,Math.min(max,n));
 
 function shell(){
   app.innerHTML = `
-  <header class="topbar">
-    <div class="brand">
-      <strong>RJP PDF Editor Universal</strong>
-      <span id="docName">Nenhum PDF aberto</span>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-title"><div class="app-logo">▤</div><div><strong>RJP PDF Editor</strong><small>Editar. Inserir. Apagar. Sem rastos.</small></div></div>
+      <div class="app-version"><span>RJP</span><strong>V4.6</strong></div>
+    </header>
+    <div class="commandbar">
+      <label class="button primary">📂 Abrir<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
+      <button id="saveBtn" disabled>💾 Guardar</button><button id="shareBtn" disabled>↗ Partilhar</button>
+      <span class="sep"></span><button id="zoomOut">−</button><span id="zoomLabel">125%</span><button id="zoomIn">+</button>
+      <span class="sep"></span><button id="undoBtn">↶</button><button id="deleteBtn" disabled>🗑 Apagar</button><button id="closeBtn" disabled>Fechar</button>
     </div>
-    <div class="toolbar">
-      <label class="button primary">Abrir PDF<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
-      <button id="makeEditableBtn" disabled>⚡ Tornar editável</button>
-      <button id="ocrBtn" disabled>OCR páginas digitalizadas</button>
-      <button id="ocrSettingsBtn" title="Configuração OCR">⚙ OCR</button>
-      <span class="sep"></span>
-      <button id="editMode" class="active">Editar texto</button>
-      <button id="addMode">Adicionar texto</button>
-      <button id="checkMode">✓ Marcar</button>
-      <button id="imageMode">🖼 Imagens</button>
-      <label class="button" id="insertImageLabel">➕ Inserir imagem<input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden></label>
-      <button id="undoBtn">Desfazer</button>
-      <button id="deleteBtn" disabled>Apagar</button>
-      <span class="sep"></span>
-      <label class="font-control" title="Tipo de letra">Fonte
-        <select id="fontFamily" disabled>
-          <option value="Helvetica">Helvetica / Arial</option>
-          <option value="HelveticaBold">Helvetica Negrito</option>
-          <option value="HelveticaOblique">Helvetica Itálico</option>
-          <option value="TimesRoman">Times Roman</option>
-          <option value="TimesRomanBold">Times Negrito</option>
-          <option value="TimesRomanItalic">Times Itálico</option>
-          <option value="Courier">Courier</option>
-          <option value="CourierBold">Courier Negrito</option>
-        </select>
-      </label>
-      <label class="font-control" title="Tamanho da letra">Tamanho
-        <input id="fontSize" type="number" min="5" max="72" step="1" value="10" disabled>
-      </label>
-      <button id="fontSmaller" title="Diminuir letra" disabled>A−</button>
-      <button id="fontLarger" title="Aumentar letra" disabled>A+</button>
-      <span class="sep"></span>
-      <button id="zoomOut">−</button><span id="zoomLabel">125%</span><button id="zoomIn">+</button>
-      <span class="sep"></span>
-      <button id="saveBtn" class="primary" disabled>Guardar PDF editável</button>
-      <button id="shareBtn" disabled>Partilhar</button>
-      <button id="closeBtn" disabled>Fechar</button>
+    <div class="main-layout">
+      <aside class="tool-sidebar">
+        <button id="editMode" class="tool active">➤ <span>Selecionar / Texto</span></button>
+        <button id="addMode" class="tool">T <span>Adicionar texto</span></button>
+        <label class="tool file-tool" id="insertImageLabel">▧ <span>Inserir imagem</span><input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden></label>
+        <button id="imageMode" class="tool">▣ <span>Imagens</span></button>
+        <button id="checkMode" class="tool">✓ <span>Marcar</span></button>
+        <button id="makeEditableBtn" class="tool" disabled>⚡ <span>Tornar editável</span></button>
+        <button id="ocrBtn" class="tool" disabled>⌕ <span>OCR / Reconhecer</span></button>
+        <button id="ocrSettingsBtn" class="tool">⚙ <span>Definições OCR</span></button>
+      </aside>
+      <section class="document-column">
+        <div id="status" class="status">Abre qualquer PDF para começar.</div>
+        <main id="workspace" class="workspace empty">
+          <div class="dropzone"><div class="dropicon">PDF</div><h2>Abre ou arrasta um PDF</h2><p>Preserva o layout original e edita texto, campos e imagens.</p></div>
+        </main>
+      </section>
+      <aside class="properties-panel">
+        <div class="panel-tabs"><button class="active">Propriedades</button><button id="insertImageBtn">Inserir imagem</button></div>
+        <div class="panel-section image-props">
+          <h3>Imagem</h3><p class="muted">Seleciona uma imagem existente ou insere uma nova.</p>
+          <button id="panelDeleteImage" class="danger" disabled>🗑 Remover imagem</button>
+        </div>
+        <div class="panel-section text-props">
+          <h3>Texto</h3>
+          <label>Fonte<select id="fontFamily" disabled>
+            <option value="Helvetica">Helvetica / Arial</option><option value="HelveticaBold">Helvetica Negrito</option><option value="HelveticaOblique">Helvetica Itálico</option><option value="TimesRoman">Times Roman</option><option value="TimesRomanBold">Times Negrito</option><option value="TimesRomanItalic">Times Itálico</option><option value="Courier">Courier</option><option value="CourierBold">Courier Negrito</option>
+          </select></label>
+          <label>Tamanho<div class="size-row"><button id="fontSmaller" disabled>A−</button><input id="fontSize" type="number" min="5" max="72" step="1" value="10" disabled><button id="fontLarger" disabled>A+</button></div></label>
+        </div>
+        <div class="panel-section quality"><h3>Qualidade</h3><label><input type="checkbox" checked disabled> Manter qualidade original</label><label><input type="checkbox" checked disabled> Sem recompressão desnecessária</label></div>
+      </aside>
     </div>
-  </header>
-  <div id="status" class="status">Abre qualquer PDF. Texto existente, formulários e PDFs digitalizados podem ser convertidos em campos editáveis.</div>
-  <main id="workspace" class="workspace empty">
-    <div class="dropzone">
-      <div class="dropicon">PDF</div>
-      <h2>Abre ou arrasta um PDF</h2>
-      <p>PDF normal: clica no texto para editar ou usa “Tornar editável”.<br>PDF digitalizado: usa “OCR páginas digitalizadas”.</p>
-    </div>
-  </main>`;
+  </div>`;
 }
 
 function bindUI(){
@@ -98,6 +91,8 @@ function bindUI(){
   document.querySelector('#checkMode').onclick = () => setMode('check');
   document.querySelector('#imageMode').onclick = () => setMode('image');
   document.querySelector('#imageInput').addEventListener('change', e => e.target.files[0] && prepareImageInsert(e.target.files[0]));
+  document.querySelector('#insertImageBtn').onclick = () => document.querySelector('#imageInput').click();
+  document.querySelector('#panelDeleteImage').onclick = deleteSelected;
   document.querySelector('#undoBtn').onclick = undo;
   document.querySelector('#deleteBtn').onclick = deleteSelected;
   document.querySelector('#fontFamily').onchange = e => applyFontFamily(e.target.value);
@@ -139,6 +134,7 @@ function updateChrome(){
   document.querySelector('#docName').textContent=has?`${editor.fileName}${editor.dirty?' • alterado':''}`:'Nenhum PDF aberto';
   ['saveBtn','shareBtn','closeBtn','makeEditableBtn','ocrBtn'].forEach(id=>document.querySelector(`#${id}`).disabled=!has);
   document.querySelector('#deleteBtn').disabled=!editor.selectedId;
+  const panelDel=document.querySelector('#panelDeleteImage'); if(panelDel) panelDel.disabled=!editor.selectedId;
   const textTarget = getSelectedTextTarget();
   ['fontFamily','fontSize','fontSmaller','fontLarger'].forEach(id=>{const el=document.querySelector(`#${id}`);if(el)el.disabled=!textTarget;});
   if(textTarget){
@@ -223,7 +219,7 @@ async function renderPage(pageNum,ws){
     }
   }catch(e){editor.detectedLines[pageNum]=[];console.warn('Text layer',e);}
   const editLayer=document.createElement('div');editLayer.className='edit-layer';section.appendChild(editLayer);
-  section.addEventListener('click',ev=>{if(ev.target!==section&&ev.target!==canvas&&ev.target!==editLayer)return;const r=section.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(editor.mode==='add')addTextAt(pageNum,viewport,x,y);else if(editor.mode==='check')addCheckAt(pageNum,viewport,x,y);else if(editor.mode==='imageInsert')addPendingImageAt(pageNum,viewport,x,y);else selectEdit(null);});
+  section.addEventListener('click',ev=>{const r=section.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(editor.mode==='imageInsert'&&editor.pendingImage){ev.preventDefault();ev.stopPropagation();addPendingImageAt(pageNum,viewport,x,y);return;}if(ev.target!==section&&ev.target!==canvas&&ev.target!==editLayer)return;if(editor.mode==='add')addTextAt(pageNum,viewport,x,y);else if(editor.mode==='check')addCheckAt(pageNum,viewport,x,y);else selectEdit(null);},true);
   renderEditsForPage(pageNum,viewport,editLayer);ws.appendChild(section);
 }
 
@@ -277,10 +273,25 @@ async function prepareImageInsert(file){
       const c=document.createElement('canvas');c.width=im.naturalWidth||im.width;c.height=im.naturalHeight||im.height;c.getContext('2d').drawImage(im,0,0);dataUrl=c.toDataURL('image/png');mime='image/png';dim={w:c.width,h:c.height};
     }
     editor.pendingImage={dataUrl,mime,name:file.name||'imagem',pixelW:dim.w,pixelH:dim.h};
-    setMode('imageInsert');
-    status(`Imagem pronta: ${file.name}. Clica na página onde queres inseri-la.`);
+    const pageNum=getActivePageNumber();
+    await addPendingImageCentered(pageNum);
+    status(`Imagem inserida: ${file.name}. Podes mover, redimensionar ou apagar.`);
   }catch(e){alert('Não foi possível preparar a imagem: '+e.message);}
   finally{const input=document.querySelector('#imageInput');if(input)input.value='';}
+}
+function getActivePageNumber(){
+  const pages=[...document.querySelectorAll('.pdf-page')]; if(!pages.length)return 1;
+  const target=window.innerHeight/2; let best=pages[0],dist=Infinity;
+  for(const el of pages){const r=el.getBoundingClientRect(),d=Math.abs((r.top+r.bottom)/2-target);if(d<dist){dist=d;best=el;}}
+  return Number(best.dataset.page)||1;
+}
+async function addPendingImageCentered(page){
+  const pending=editor.pendingImage;if(!pending||!editor.pdfjs)return;
+  const pdfPage=await editor.pdfjs.getPage(page), base=pdfPage.getViewport({scale:1});
+  const aspect=Math.max(.05,pending.pixelW/Math.max(1,pending.pixelH)); let w=Math.min(base.width*.55,260),h=w/aspect;
+  if(h>base.height*.55){h=base.height*.55;w=h*aspect;}
+  pushUndo(); const e={id:uid(),kind:'imageAdd',page,x:(base.width-w)/2,y:(base.height-h)/2,w,h,dataUrl:pending.dataUrl,mime:pending.mime,name:pending.name,mask:false};
+  editor.edits.push(e);editor.pendingImage=null;editor.mode='image';markDirty();setMode('image');await refreshPage(page,e.id);
 }
 function addPendingImageAt(page,viewport,x,y){
   const pending=editor.pendingImage;if(!pending)return;
@@ -424,7 +435,7 @@ async function savePdf(){
     for(const e of editor.edits){
       const p=pages[e.page-1];if(!p||e.kind==='imageTarget')continue;
       const safe=pdfSafeText(e.kind==='check'?'X':e.text),fieldName=`RJP_${e.kind}_${e.id.replace(/[^a-zA-Z0-9]/g,'')}`;
-      if(e.kind==='imageHide'){try{p.drawRectangle({x:e.x-2,y:e.y-2,width:Math.max(1,e.w+4),height:Math.max(1,e.h+4),color:rgb(1,1,1),borderWidth:0});}catch(err){console.warn('image hide',err);}continue;}
+      if(e.kind==='imageHide'){try{p.drawRectangle({x:e.x-6,y:e.y-6,width:Math.max(1,e.w+12),height:Math.max(1,e.h+12),color:rgb(1,1,1),borderWidth:0,opacity:1});}catch(err){console.warn('image hide',err);}continue;}
       if(e.kind==='imageAdd'){
         try{
           const raw=e.dataUrl?.split(',')[1]||'';const bytes=Uint8Array.from(atob(raw),c=>c.charCodeAt(0));
