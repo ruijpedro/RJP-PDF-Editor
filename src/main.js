@@ -9,7 +9,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
-const APP_SESSION_VERSION = '4.1-font-controls';
+const APP_SESSION_VERSION = '4.4-image-edit';
 
 const editor = {
   pdfBytes: null,
@@ -46,6 +46,7 @@ function shell(){
       <button id="editMode" class="active">Editar texto</button>
       <button id="addMode">Adicionar texto</button>
       <button id="checkMode">✓ Marcar</button>
+      <button id="imageMode">🖼 Imagens</button>
       <button id="undoBtn">Desfazer</button>
       <button id="deleteBtn" disabled>Apagar</button>
       <span class="sep"></span>
@@ -93,6 +94,7 @@ function bindUI(){
   document.querySelector('#editMode').onclick = () => setMode('edit');
   document.querySelector('#addMode').onclick = () => setMode('add');
   document.querySelector('#checkMode').onclick = () => setMode('check');
+  document.querySelector('#imageMode').onclick = () => setMode('image');
   document.querySelector('#undoBtn').onclick = undo;
   document.querySelector('#deleteBtn').onclick = deleteSelected;
   document.querySelector('#fontFamily').onchange = e => applyFontFamily(e.target.value);
@@ -124,9 +126,9 @@ function bindUI(){
 function status(t){ document.querySelector('#status').textContent = t; }
 function setMode(mode){
   editor.mode=mode; selectEdit(null);
-  ['edit','add','check'].forEach(m=>document.querySelector(`#${m}Mode`)?.classList.toggle('active',m===mode));
+  ['edit','add','check','image'].forEach(m=>document.querySelector(`#${m}Mode`)?.classList.toggle('active',m===mode));
   document.querySelector('#workspace').dataset.mode=mode;
-  status(mode==='edit'?'Modo editar: clica diretamente num texto existente.':mode==='add'?'Modo adicionar: clica na página para criar um novo campo.':'Modo marcar: clica onde queres adicionar uma marca.');
+  status(mode==='edit'?'Modo editar: clica diretamente num texto existente.':mode==='add'?'Modo adicionar: clica na página para criar um novo campo.':mode==='check'?'Modo marcar: clica onde queres adicionar uma marca.':'Modo imagens: clica numa fotografia/imagem existente e usa Apagar ou a tecla Delete.');
 }
 function updateChrome(){
   const has=!!editor.pdfBytes;
@@ -204,6 +206,8 @@ async function renderPage(pageNum,ws){
   const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width*devicePixelRatio);canvas.height=Math.ceil(viewport.height*devicePixelRatio);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;
   await pdfPage.render({canvasContext:canvas.getContext('2d'),viewport,transform:devicePixelRatio!==1?[devicePixelRatio,0,0,devicePixelRatio,0,0]:null,annotationMode:pdfjsLib.AnnotationMode?.DISABLE??0}).promise;
   section.appendChild(canvas);
+  const imageLayer=document.createElement('div');imageLayer.className='image-hit-layer';section.appendChild(imageLayer);
+  try{await renderImageHitboxes(pdfPage,viewport,imageLayer,pageNum);}catch(e){console.warn('Image hitboxes',e);}
   const formLayer=document.createElement('div');formLayer.className='form-layer';section.appendChild(formLayer);await renderFormFields(pdfPage,viewport,formLayer);
   const textLayer=document.createElement('div');textLayer.className='text-hit-layer';section.appendChild(textLayer);
   try{
@@ -217,6 +221,29 @@ async function renderPage(pageNum,ws){
   const editLayer=document.createElement('div');editLayer.className='edit-layer';section.appendChild(editLayer);
   section.addEventListener('click',ev=>{if(ev.target!==section&&ev.target!==canvas&&ev.target!==editLayer)return;const r=section.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(editor.mode==='add')addTextAt(pageNum,viewport,x,y);else if(editor.mode==='check')addCheckAt(pageNum,viewport,x,y);else selectEdit(null);});
   renderEditsForPage(pageNum,viewport,editLayer);ws.appendChild(section);
+}
+
+function mulM(a,b){return [a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];}
+function imageRectFromMatrix(viewport,m){
+  const vm=mulM(viewport.transform,m), pts=[[0,0],[1,0],[0,1],[1,1]].map(([x,y])=>[vm[0]*x+vm[2]*y+vm[4],vm[1]*x+vm[3]*y+vm[5]]);
+  const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);return{x:Math.min(...xs),y:Math.min(...ys),w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};
+}
+async function renderImageHitboxes(pdfPage,viewport,layer,pageNum){
+  const ops=await pdfPage.getOperatorList(), O=pdfjsLib.OPS, stack=[];let ctm=[1,0,0,1,0,0],seq=0;
+  for(let i=0;i<ops.fnArray.length;i++){
+    const fn=ops.fnArray[i],args=ops.argsArray[i]||[];
+    if(fn===O.save){stack.push(ctm.slice());continue;} if(fn===O.restore){ctm=stack.pop()||[1,0,0,1,0,0];continue;}
+    if(fn===O.transform){ctm=mulM(ctm,args);continue;}
+    if(fn!==O.paintImageXObject&&fn!==O.paintInlineImageXObject&&fn!==O.paintImageMaskXObject)continue;
+    const r=imageRectFromMatrix(viewport,ctm); if(r.w<18||r.h<18)continue;
+    const id=`img-${pageNum}-${seq++}`;const b=document.createElement('button');b.type='button';b.className='image-hit';b.dataset.imageId=id;b.title='Selecionar imagem';Object.assign(b.style,{left:`${r.x}px`,top:`${r.y}px`,width:`${r.w}px`,height:`${r.h}px`});
+    b.onclick=ev=>{ev.stopPropagation();if(editor.mode!=='image')return;selectImageForDelete(pageNum,viewport,r,id,b);};layer.appendChild(b);
+  }
+}
+function selectImageForDelete(page,viewport,r,imageId,el){
+  document.querySelectorAll('.image-hit.selected').forEach(x=>x.classList.remove('selected'));el?.classList.add('selected');
+  const pdf=viewportRectToPdf(viewport,r.x,r.y,r.w,r.h);let e=editor.edits.find(x=>x.kind==='imageTarget'&&x.page===page&&x.imageId===imageId);
+  if(!e){e={id:uid(),kind:'imageTarget',page,imageId,...pdf};editor.edits.push(e);}editor.selectedId=e.id;editor.selectedFieldName=null;updateChrome();status('Imagem selecionada. Carrega em Apagar ou na tecla Delete.');
 }
 
 async function renderFormFields(pdfPage,viewport,layer){
@@ -240,7 +267,7 @@ function addTextAt(page,viewport,x,y){pushUndo();const [px,py]=viewport.convertT
 function addCheckAt(page,viewport,x,y){pushUndo();const [px,py]=viewport.convertToPdfPoint(x,y);editor.edits.push({id:uid(),kind:'check',page,x:px,y:py-4,w:15,h:15,text:'X',fontSize:12,fontName:'HelveticaBold',mask:false});markDirty();refreshPage(page,editor.edits.at(-1).id);}
 function pushUndo(){editor.undo.push(JSON.stringify(editor.edits));if(editor.undo.length>30)editor.undo.shift();}
 function undo(){if(!editor.undo.length)return;editor.edits=JSON.parse(editor.undo.pop());editor.selectedId=null;markDirty();renderAll();}
-function deleteSelected(){if(!editor.selectedId)return;const e=editor.edits.find(x=>x.id===editor.selectedId);if(!e)return;pushUndo();editor.edits=editor.edits.filter(x=>x.id!==editor.selectedId);editor.selectedId=null;markDirty();refreshPage(e.page);}
+function deleteSelected(){if(!editor.selectedId)return;const e=editor.edits.find(x=>x.id===editor.selectedId);if(!e)return;pushUndo();if(e.kind==='imageTarget'){e.kind='imageHide';e.mask=true;editor.selectedId=null;markDirty();refreshPage(e.page);status('Imagem marcada para remoção. O restante grafismo do PDF não será reconstruído nem recomprimido.');return;}editor.edits=editor.edits.filter(x=>x.id!==editor.selectedId);editor.selectedId=null;markDirty();refreshPage(e.page);}
 function selectEdit(id){editor.selectedId=id;editor.selectedFieldName=null;document.querySelectorAll('.edit-box').forEach(el=>el.classList.toggle('selected',el.dataset.id===id));document.querySelectorAll('.pdf-form-text.selected-field').forEach(el=>el.classList.remove('selected-field'));updateChrome();if(id)setTimeout(()=>document.querySelector(`.edit-box[data-id="${CSS.escape(id)}"] textarea`)?.focus(),0);}
 function selectFormField(name,el){
   editor.selectedId=null;editor.selectedFieldName=name;
@@ -346,8 +373,9 @@ async function savePdf(){
       const field=form.getFieldMaybe(name);if(!field)continue;const hasValue=Object.prototype.hasOwnProperty.call(editor.formValues,name),value=editor.formValues[name];try{if(field instanceof PDFTextField){if(hasValue)field.setText(pdfSafeText(value));const st=editor.formStyles[name];if(st){try{field.setFontSize(clamp(Number(st.fontSize)||10,5,72));}catch(_){ }try{field.updateAppearances(await getFont(st.fontName||'Helvetica'));}catch(err){console.warn('aparência campo',name,err);}}}else if(hasValue&&field instanceof PDFCheckBox)value?field.check():field.uncheck();else if(hasValue&&(field instanceof PDFDropdown||field instanceof PDFOptionList))field.select(pdfSafeText(value));else if(hasValue&&field instanceof PDFRadioGroup&&value)field.select(pdfSafeText(value));}catch(e){console.warn(name,e);}
     }
     for(const e of editor.edits){
-      const p=pages[e.page-1];if(!p)continue;
+      const p=pages[e.page-1];if(!p||e.kind==='imageTarget')continue;
       const safe=pdfSafeText(e.kind==='check'?'X':e.text),fieldName=`RJP_${e.kind}_${e.id.replace(/[^a-zA-Z0-9]/g,'')}`;
+      if(e.kind==='imageHide'){try{const f=form.createTextField(fieldName);f.setText('');f.addToPage(p,{x:e.x,y:e.y,width:Math.max(1,e.w),height:Math.max(1,e.h),borderWidth:0,backgroundColor:rgb(1,1,1)});f.enableReadOnly();}catch(err){console.warn('image hide',err);}continue;}
       if(e.mask)p.drawRectangle({x:e.x-1,y:e.y-1,width:e.w+2,height:e.h+2,color:rgb(1,1,1),borderWidth:0});
       if(e.kind==='check'){
         try{const cb=form.createCheckBox(fieldName);cb.addToPage(p,{x:e.x,y:e.y,width:Math.max(10,e.w),height:Math.max(10,e.h),borderWidth:0});cb.check();}catch(err){console.warn('checkbox',err);}

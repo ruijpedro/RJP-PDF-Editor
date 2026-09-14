@@ -42,3 +42,11 @@ O instalador é gerado **sem assinatura de código**. O Windows SmartScreen pode
 
 ## V4.3.3
 Workflow Windows robusto: upload por wildcard recursivo e validação explícita do EXE. Não reutilizar um run antigo; fazer novo commit/push para disparar este workflow.
+
+
+## V4.4 — Imagens e preservação do PDF
+- Novo modo **Imagens** para selecionar fotografias/imagens existentes.
+- Botão **Apagar** e tecla Delete ocultam a imagem através de uma camada PDF editável, sem rasterizar/reconstruir as restantes páginas.
+- O conteúdo original, fontes, espaçamentos e restantes imagens não são recomprimidos.
+- A remoção é gravada como objeto editável do próprio PDF.
+- O tamanho do ficheiro pode variar ligeiramente após qualquer gravação PDF; não é tecnicamente possível garantir o mesmo número exato de bytes.

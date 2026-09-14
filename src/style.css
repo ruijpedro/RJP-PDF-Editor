@@ -29,3 +29,12 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 #fontSmaller,#fontLarger{font-weight:750;min-width:38px}
 .form-layer .pdf-form-text.selected-field{border:2px solid #0b6f61!important;box-shadow:0 0 0 2px #0b6f6130!important;background:#fff!important}
 @media(max-width:1100px){.font-control{padding:3px 5px}.font-control select{min-width:116px}}
+
+/* V4.4 — seleção e remoção não destrutiva de imagens */
+.image-hit-layer{position:absolute;inset:0;z-index:7;pointer-events:none}
+.image-hit{position:absolute;border:0;background:transparent;opacity:0;pointer-events:none;cursor:pointer;padding:0}
+.workspace[data-mode="image"] .image-hit{pointer-events:auto}
+.workspace[data-mode="image"] .image-hit:hover{opacity:1;background:rgba(11,111,97,.08);outline:2px dashed #0b6f61;outline-offset:-2px}
+.workspace[data-mode="image"] .image-hit.selected{opacity:1;background:rgba(11,111,97,.10);outline:3px solid #0b6f61;outline-offset:-3px}
+.edit-box.image-hide{background:#fff;border:1px dashed #b9c3cc}
+.edit-box.image-hide textarea,.edit-box.image-hide .resize{display:none}
