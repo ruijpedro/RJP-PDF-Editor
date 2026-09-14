@@ -1,4 +1,4 @@
-name: RJP PDF Editor V4.6.3 - Web + Android + Windows
+name: RJP PDF Editor V4.6.4 - Web + Android + Windows
 
 on:
   push:
@@ -96,6 +96,9 @@ jobs:
           npx cap add android
           npx cap sync android
 
+      - name: Apply RJP Android icon
+        run: npm run android:icons
+
       - name: Build debug APK
         working-directory: android
         run: |
@@ -105,13 +108,13 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p release/android
-          cp android/app/build/outputs/apk/debug/app-debug.apk release/android/RJP-PDF-Editor-v4.6.3-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/android/RJP-PDF-Editor-v4.6.4-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RJP-PDF-Editor-Android-v4.6.3
-          path: release/android/RJP-PDF-Editor-v4.6.3-debug.apk
+          name: RJP-PDF-Editor-Android-v4.6.4
+          path: release/android/RJP-PDF-Editor-v4.6.4-debug.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -156,7 +159,7 @@ jobs:
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RJP-PDF-Editor-Windows-v4.6.3
+          name: RJP-PDF-Editor-Windows-v4.6.4
           path: |
             release/windows/**/*.exe
             release/windows/*.exe
