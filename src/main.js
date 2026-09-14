@@ -9,7 +9,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
-const APP_SESSION_VERSION = '4.6.2-continuous-multipage-scroll';
+const APP_SESSION_VERSION = '4.6.3-scroll-real-fix';
 
 const editor = {
   pdfBytes: null,
@@ -36,7 +36,7 @@ function shell(){
   <div class="app-shell">
     <header class="app-header">
       <div class="app-title"><div class="app-logo">▤</div><div><strong>RJP PDF Editor</strong><small>Editar. Inserir. Apagar. Sem rastos.</small></div></div>
-      <div class="app-version"><span>RJP</span><strong>V4.6.2</strong></div>
+      <div class="app-version"><span>RJP</span><strong>V4.6.3</strong></div>
     </header>
     <div class="commandbar">
       <label class="button primary">📂 Abrir<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
@@ -116,11 +116,11 @@ function bindUI(){
   });
   ws.addEventListener('scroll', updateVisiblePageIndicator, {passive:true});
   ws.addEventListener('wheel', e => {
-    // Mantém o scroll dentro do visualizador, mesmo sobre canvas/camadas do PDF.
-    if(!editor.pdfjs) return;
-    if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){
+    if(!editor.pdfjs || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    const canScroll = ws.scrollHeight > ws.clientHeight + 2;
+    if(canScroll){
       e.preventDefault();
-      ws.scrollTop += e.deltaY;
+      ws.scrollBy({top:e.deltaY,left:0,behavior:'auto'});
     }
   }, {passive:false});
   window.addEventListener('keydown', e => {

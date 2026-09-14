@@ -53,20 +53,73 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 
 .doc-name{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#526273;padding:0 8px;}
 @media(max-width:900px){.doc-name{display:none;}}
-\n\n/* V4.6.2 — scroll contínuo multipágina robusto */
-html,body,#app,.app-shell{height:100%;min-height:0}
-.main-layout{min-height:0!important;overflow:hidden}
-.document-column{min-height:0!important;height:100%;overflow:hidden!important}
-.workspace{min-height:0!important;height:100%;overflow-y:auto!important;overflow-x:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
-.pdf-page{position:relative;flex:0 0 auto!important;display:block!important}
-.page-indicator{font-size:12px;color:#536475;white-space:nowrap;padding:0 4px;font-variant-numeric:tabular-nums}
-@media(max-width:980px){
-  body{overflow:hidden!important}
-  .app-shell{height:100dvh!important;min-height:0!important}
-  .main-layout{display:flex!important;flex-direction:column;min-height:0!important;overflow:hidden!important}
-  .tool-sidebar{flex:0 0 auto}
-  .document-column{flex:1 1 auto!important;min-height:0!important;height:auto!important;overflow:hidden!important}
-  .workspace{flex:1 1 auto!important;min-height:0!important;height:100%!important;overflow-y:auto!important;overflow-x:auto!important}
-  .properties-panel{flex:0 0 auto;max-height:34vh;overflow:auto}
+
+
+/* V4.6.3 — scroll contínuo multipágina FIX REAL */
+html, body, #app { width:100%; height:100%; min-height:0; }
+body { overflow:hidden !important; }
+.app-shell { width:100%; height:100dvh !important; min-height:0 !important; display:flex !important; flex-direction:column !important; overflow:hidden !important; }
+.app-header { flex:0 0 76px !important; }
+.commandbar { flex:0 0 54px !important; }
+.main-layout {
+  flex:1 1 0 !important;
+  height:calc(100dvh - 130px) !important;
+  min-height:0 !important;
+  overflow:hidden !important;
+  display:grid !important;
+  grid-template-columns:210px minmax(0,1fr) 330px !important;
 }
-@media(max-width:620px){.page-indicator{display:none}.properties-panel{max-height:30vh}}
+.tool-sidebar, .properties-panel { min-height:0 !important; overflow-y:auto !important; }
+.document-column {
+  min-width:0 !important;
+  min-height:0 !important;
+  height:100% !important;
+  overflow:hidden !important;
+  display:flex !important;
+  flex-direction:column !important;
+}
+.document-column > .status { flex:0 0 34px !important; height:34px !important; }
+.workspace {
+  flex:1 1 0 !important;
+  width:100% !important;
+  height:0 !important;
+  min-height:0 !important;
+  max-height:none !important;
+  overflow-y:scroll !important;
+  overflow-x:auto !important;
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:flex-start !important;
+  justify-content:flex-start !important;
+  gap:18px !important;
+  padding:18px 24px 40px !important;
+  overscroll-behavior:contain;
+  touch-action:pan-x pan-y;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-gutter:stable both-edges;
+}
+.workspace.empty { align-items:center !important; justify-content:center !important; }
+.pdf-page { flex:0 0 auto !important; display:block !important; margin:0 auto !important; }
+.page-indicator { font-size:12px; color:#536475; white-space:nowrap; padding:0 4px; font-variant-numeric:tabular-nums; }
+
+@media(max-width:980px){
+  .app-header { flex-basis:62px !important; }
+  .commandbar { flex-basis:54px !important; }
+  .app-shell { height:100dvh !important; }
+  .main-layout {
+    height:calc(100dvh - 116px) !important;
+    display:flex !important;
+    flex-direction:column !important;
+  }
+  .tool-sidebar { flex:0 0 auto !important; max-height:54px; overflow-x:auto !important; overflow-y:hidden !important; }
+  .document-column { flex:1 1 0 !important; height:0 !important; min-height:0 !important; }
+  .workspace { flex:1 1 0 !important; height:0 !important; min-height:0 !important; overflow-y:scroll !important; padding:10px 10px 30px !important; }
+  .properties-panel { flex:0 0 auto !important; max-height:30vh !important; overflow:auto !important; }
+}
+@media(max-width:620px){
+  .app-header { flex-basis:58px !important; }
+  .commandbar { flex-basis:50px !important; }
+  .main-layout { height:calc(100dvh - 108px) !important; }
+  .page-indicator { display:none; }
+  .properties-panel { max-height:26vh !important; }
+}
