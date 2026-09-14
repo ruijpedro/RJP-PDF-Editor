@@ -9,7 +9,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
-const APP_SESSION_VERSION = '4.6-responsive-image-editor';
+const APP_SESSION_VERSION = '4.6.1-responsive-image-editor-nullsafe';
 
 const editor = {
   pdfBytes: null,
@@ -36,11 +36,12 @@ function shell(){
   <div class="app-shell">
     <header class="app-header">
       <div class="app-title"><div class="app-logo">▤</div><div><strong>RJP PDF Editor</strong><small>Editar. Inserir. Apagar. Sem rastos.</small></div></div>
-      <div class="app-version"><span>RJP</span><strong>V4.6</strong></div>
+      <div class="app-version"><span>RJP</span><strong>V4.6.1</strong></div>
     </header>
     <div class="commandbar">
       <label class="button primary">📂 Abrir<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
       <button id="saveBtn" disabled>💾 Guardar</button><button id="shareBtn" disabled>↗ Partilhar</button>
+      <span id="docName" class="doc-name">Nenhum PDF aberto</span>
       <span class="sep"></span><button id="zoomOut">−</button><span id="zoomLabel">125%</span><button id="zoomIn">+</button>
       <span class="sep"></span><button id="undoBtn">↶</button><button id="deleteBtn" disabled>🗑 Apagar</button><button id="closeBtn" disabled>Fechar</button>
     </div>
@@ -121,7 +122,7 @@ function bindUI(){
   });
 }
 
-function status(t){ document.querySelector('#status').textContent = t; }
+function status(t){ const el=document.querySelector('#status'); if(el) el.textContent=t; }
 function setMode(mode){
   editor.mode=mode; selectEdit(null);
   ['edit','add','check','image'].forEach(m=>document.querySelector(`#${m}Mode`)?.classList.toggle('active',m===mode));
@@ -131,9 +132,9 @@ function setMode(mode){
 }
 function updateChrome(){
   const has=!!editor.pdfBytes;
-  document.querySelector('#docName').textContent=has?`${editor.fileName}${editor.dirty?' • alterado':''}`:'Nenhum PDF aberto';
+  const docName=document.querySelector('#docName'); if(docName) docName.textContent=has?`${editor.fileName}${editor.dirty?' • alterado':''}`:'Nenhum PDF aberto';
   ['saveBtn','shareBtn','closeBtn','makeEditableBtn','ocrBtn'].forEach(id=>document.querySelector(`#${id}`).disabled=!has);
-  document.querySelector('#deleteBtn').disabled=!editor.selectedId;
+  const deleteBtn=document.querySelector('#deleteBtn'); if(deleteBtn) deleteBtn.disabled=!editor.selectedId;
   const panelDel=document.querySelector('#panelDeleteImage'); if(panelDel) panelDel.disabled=!editor.selectedId;
   const textTarget = getSelectedTextTarget();
   ['fontFamily','fontSize','fontSmaller','fontLarger'].forEach(id=>{const el=document.querySelector(`#${id}`);if(el)el.disabled=!textTarget;});
@@ -143,7 +144,7 @@ function updateChrome(){
     if(ff)ff.value=style.fontName||'Helvetica';
     if(fs)fs.value=Math.round(style.fontSize||10);
   }
-  document.querySelector('#zoomLabel').textContent=`${Math.round(editor.scale*100)}%`;
+  const zoomLabel=document.querySelector('#zoomLabel'); if(zoomLabel) zoomLabel.textContent=`${Math.round(editor.scale*100)}%`;
 }
 
 function dbOpen(){

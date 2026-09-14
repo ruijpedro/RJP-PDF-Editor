@@ -61,3 +61,9 @@ Workflow Windows robusto: upload por wildcard recursivo e validação explícita
 
 ## V4.6
 Interface unificada Windows/Web/Android, inserção imediata de imagens na página ativa e remoção visual sem moldura residual.
+
+
+## V4.6.1 — correção de abertura de PDF
+- Corrige erro `Cannot set properties of null (setting 'textContent')`.
+- Adiciona o elemento `docName` à barra superior.
+- Torna as atualizações da interface null-safe para Web, Android e Windows.
