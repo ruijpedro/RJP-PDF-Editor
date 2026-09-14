@@ -1,4 +1,4 @@
-# RJP PDF Editor V4.3.1.1 — Web + Android + Windows
+# RJP PDF Editor V4.3.2.1 — Web + Android + Windows
 
 Editor PDF universal sem ficha pré-carregada.
 
@@ -17,11 +17,11 @@ Apaga `android.yml`, `webapp.yml` ou outros workflows antigos para evitar builds
 ## Windows
 O job **Build Windows Installer** gera o artifact:
 
-`RJP-PDF-Editor-Windows-v4.3.1`
+`RJP-PDF-Editor-Windows-v4.3.2`
 
 Dentro encontrarás:
 
-`RJP-PDF-Editor-Setup-4.3.1.exe`
+`RJP-PDF-Editor-Setup-4.3.2.exe`
 
 O instalador permite escolher a pasta de instalação e cria atalhos no Ambiente de Trabalho e Menu Iniciar.
 
