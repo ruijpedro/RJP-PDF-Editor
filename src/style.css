@@ -53,3 +53,20 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 
 .doc-name{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#526273;padding:0 8px;}
 @media(max-width:900px){.doc-name{display:none;}}
+\n\n/* V4.6.2 — scroll contínuo multipágina robusto */
+html,body,#app,.app-shell{height:100%;min-height:0}
+.main-layout{min-height:0!important;overflow:hidden}
+.document-column{min-height:0!important;height:100%;overflow:hidden!important}
+.workspace{min-height:0!important;height:100%;overflow-y:auto!important;overflow-x:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+.pdf-page{position:relative;flex:0 0 auto!important;display:block!important}
+.page-indicator{font-size:12px;color:#536475;white-space:nowrap;padding:0 4px;font-variant-numeric:tabular-nums}
+@media(max-width:980px){
+  body{overflow:hidden!important}
+  .app-shell{height:100dvh!important;min-height:0!important}
+  .main-layout{display:flex!important;flex-direction:column;min-height:0!important;overflow:hidden!important}
+  .tool-sidebar{flex:0 0 auto}
+  .document-column{flex:1 1 auto!important;min-height:0!important;height:auto!important;overflow:hidden!important}
+  .workspace{flex:1 1 auto!important;min-height:0!important;height:100%!important;overflow-y:auto!important;overflow-x:auto!important}
+  .properties-panel{flex:0 0 auto;max-height:34vh;overflow:auto}
+}
+@media(max-width:620px){.page-indicator{display:none}.properties-panel{max-height:30vh}}

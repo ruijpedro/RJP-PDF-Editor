@@ -9,7 +9,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
-const APP_SESSION_VERSION = '4.6.1-responsive-image-editor-nullsafe';
+const APP_SESSION_VERSION = '4.6.2-continuous-multipage-scroll';
 
 const editor = {
   pdfBytes: null,
@@ -36,14 +36,14 @@ function shell(){
   <div class="app-shell">
     <header class="app-header">
       <div class="app-title"><div class="app-logo">▤</div><div><strong>RJP PDF Editor</strong><small>Editar. Inserir. Apagar. Sem rastos.</small></div></div>
-      <div class="app-version"><span>RJP</span><strong>V4.6.1</strong></div>
+      <div class="app-version"><span>RJP</span><strong>V4.6.2</strong></div>
     </header>
     <div class="commandbar">
       <label class="button primary">📂 Abrir<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
       <button id="saveBtn" disabled>💾 Guardar</button><button id="shareBtn" disabled>↗ Partilhar</button>
       <span id="docName" class="doc-name">Nenhum PDF aberto</span>
       <span class="sep"></span><button id="zoomOut">−</button><span id="zoomLabel">125%</span><button id="zoomIn">+</button>
-      <span class="sep"></span><button id="undoBtn">↶</button><button id="deleteBtn" disabled>🗑 Apagar</button><button id="closeBtn" disabled>Fechar</button>
+      <span id="pageIndicator" class="page-indicator">Página — / —</span><span class="sep"></span><button id="undoBtn">↶</button><button id="deleteBtn" disabled>🗑 Apagar</button><button id="closeBtn" disabled>Fechar</button>
     </div>
     <div class="main-layout">
       <aside class="tool-sidebar">
@@ -114,12 +114,39 @@ function bindUI(){
     const f = [...e.dataTransfer.files].find(f=>f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf'));
     if(f) openFile(f);
   });
+  ws.addEventListener('scroll', updateVisiblePageIndicator, {passive:true});
+  ws.addEventListener('wheel', e => {
+    // Mantém o scroll dentro do visualizador, mesmo sobre canvas/camadas do PDF.
+    if(!editor.pdfjs) return;
+    if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){
+      e.preventDefault();
+      ws.scrollTop += e.deltaY;
+    }
+  }, {passive:false});
   window.addEventListener('keydown', e => {
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault(); if(editor.pdfBytes) savePdf();}
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); undo();}
     if((e.key==='Delete'||e.key==='Backspace') && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) deleteSelected();
     if(e.key==='Escape') selectEdit(null);
+    if(editor.pdfjs && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
+      const ws=document.querySelector('#workspace');
+      if(e.key==='PageDown'){e.preventDefault();ws?.scrollBy({top:Math.max(300,(ws.clientHeight||600)*.82),behavior:'smooth'});}
+      if(e.key==='PageUp'){e.preventDefault();ws?.scrollBy({top:-Math.max(300,(ws.clientHeight||600)*.82),behavior:'smooth'});}
+      if(e.key==='Home'&&(e.ctrlKey||e.metaKey)){e.preventDefault();ws?.scrollTo({top:0,behavior:'smooth'});}
+      if(e.key==='End'&&(e.ctrlKey||e.metaKey)){e.preventDefault();ws?.scrollTo({top:ws.scrollHeight,behavior:'smooth'});}
+    }
   });
+}
+
+function updateVisiblePageIndicator(){
+  const ws=document.querySelector('#workspace'), out=document.querySelector('#pageIndicator');
+  if(!ws||!out||!editor.pdfjs){ if(out) out.textContent='Página — / —'; return; }
+  const pages=[...ws.querySelectorAll('.pdf-page')];
+  if(!pages.length){out.textContent=`Página — / ${editor.pdfjs.numPages}`;return;}
+  const wr=ws.getBoundingClientRect(), target=wr.top+Math.min(wr.height*.35,220);
+  let best=pages[0],dist=Infinity;
+  for(const p of pages){const r=p.getBoundingClientRect();const y=Math.max(r.top,Math.min(target,r.bottom));const d=Math.abs(y-target);if(d<dist){dist=d;best=p;}}
+  out.textContent=`Página ${Number(best.dataset.page)||1} / ${editor.pdfjs.numPages}`;
 }
 
 function status(t){ const el=document.querySelector('#status'); if(el) el.textContent=t; }
@@ -178,6 +205,7 @@ async function renderAll(){
   const ws=document.querySelector('#workspace');ws.innerHTML='';ws.classList.remove('empty');ws.dataset.mode=editor.mode;
   editor.detectedLines={};
   for(let n=1;n<=editor.pdfjs.numPages;n++) await renderPage(n,ws);
+  requestAnimationFrame(updateVisiblePageIndicator);
 }
 
 function groupTextItems(items,viewport){

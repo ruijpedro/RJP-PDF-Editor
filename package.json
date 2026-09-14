@@ -1,7 +1,7 @@
 {
   "name": "rjp-pdf-editor-universal",
   "private": true,
-  "version": "4.6.1",
+  "version": "4.6.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -57,6 +57,6 @@
       "deleteAppDataOnUninstall": false
     }
   },
-  "description": "RJP PDF Editor V4.6.1 universal para Web, Android e Windows, com edição não destrutiva, remoção limpa e inserção de imagens.",
+  "description": "RJP PDF Editor V4.6.2 universal para Web, Android e Windows, com scroll contínuo multipágina, edição não destrutiva e inserção de imagens.",
   "author": "RJP"
 }
