@@ -1,7 +1,7 @@
 {
   "name": "rjp-pdf-editor-universal",
   "private": true,
-  "version": "4.3.0",
+  "version": "4.3.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "android:sync": "npm run build && npx cap sync android",
     "android:open": "npx cap open android",
     "desktop": "npm run build && electron .",
-    "windows:dist": "npm run build && electron-builder --win nsis --x64"
+    "windows:dist": "npm run build && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "pdf-lib": "1.17.1",
@@ -46,8 +46,7 @@
             "x64"
           ]
         }
-      ],
-      "publisherName": "RJP"
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -57,5 +56,7 @@
       "shortcutName": "RJP PDF Editor",
       "deleteAppDataOnUninstall": false
     }
-  }
+  },
+  "description": "RJP PDF Editor universal para Web, Android e Windows.",
+  "author": "RJP"
 }
