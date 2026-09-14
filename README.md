@@ -1,21 +1,40 @@
-# RJP PDF Editor V4.2.2 — Web + Android
+# RJP PDF Editor V4.3.0 — Web + Android + Windows
 
-Versão universal do editor PDF com um único workflow GitHub Actions.
+Editor PDF universal sem ficha pré-carregada.
 
-## GitHub Actions
-Existe apenas:
+## Plataformas
+- **WebApp** — publicada automaticamente no GitHub Pages.
+- **Android** — APK debug gerado no GitHub Actions.
+- **Windows** — instalador `.exe` x64 gerado com Electron + NSIS.
+
+## Workflow único
+Mantém apenas:
 
 `.github/workflows/build.yml`
 
-Esse workflow:
-- compila e publica a WebApp no GitHub Pages;
-- compila o APK Android;
-- usa Node 22 e Java 21;
-- não usa `cache: npm`, evitando o erro `Some specified paths were not resolved, unable to cache dependencies`.
+Apaga `android.yml`, `webapp.yml` ou outros workflows antigos para evitar builds duplicados.
 
-## APK
-Depois de um build com sucesso:
-**Actions → RJP PDF Editor - Web + Android → Artifacts → RJP-PDF-Editor-Android-v4.2.2**
+## Windows
+O job **Build Windows Installer** gera o artifact:
 
-## Importante ao atualizar um repositório antigo
-Apaga os workflows antigos dentro de `.github/workflows/` e deixa apenas `build.yml`.
+`RJP-PDF-Editor-Windows-v4.3.0`
+
+Dentro encontrarás:
+
+`RJP-PDF-Editor-Setup-4.3.0.exe`
+
+O instalador permite escolher a pasta de instalação e cria atalhos no Ambiente de Trabalho e Menu Iniciar.
+
+## Desenvolvimento local Windows
+```bash
+npm install
+npm run desktop
+```
+
+Para gerar o instalador localmente:
+```bash
+npm run windows:dist
+```
+
+## Nota de assinatura
+O instalador é gerado **sem assinatura de código**. O Windows SmartScreen pode mostrar um aviso de editor desconhecido. Para distribuição pública, pode ser adicionada assinatura Authenticode numa versão futura.

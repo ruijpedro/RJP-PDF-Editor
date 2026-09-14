@@ -1,14 +1,16 @@
 {
   "name": "rjp-pdf-editor-universal",
   "private": true,
-  "version": "4.2.2",
+  "version": "4.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "android:sync": "npm run build && npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "desktop": "npm run build && electron .",
+    "windows:dist": "npm run build && electron-builder --win nsis --x64"
   },
   "dependencies": {
     "pdf-lib": "1.17.1",
@@ -18,6 +20,42 @@
   },
   "devDependencies": {
     "vite": "7.1.3",
-    "@capacitor/cli": "^7.0.0"
+    "@capacitor/cli": "^7.0.0",
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "pt.rjp.pdfeditor.windows",
+    "productName": "RJP PDF Editor",
+    "asar": true,
+    "directories": {
+      "output": "release/windows"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "artifactName": "RJP-PDF-Editor-Setup-${version}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "publisherName": "RJP"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "RJP PDF Editor",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
