@@ -1,0 +1,63 @@
+name: Build RJP Signer Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'bridge/**'
+      - '.github/workflows/build-windows-installer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read project version
+        id: meta
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Validate Bridge framework references
+        shell: pwsh
+        run: |
+          $proj = Get-Content bridge/RJP.Signer.Bridge/RJP.Signer.Bridge.csproj -Raw
+          if ($proj -notmatch 'Reference Include="System.Xml"') { throw "System.Xml reference missing" }
+          Write-Host "Bridge references OK: System.Xml + System.Security + WindowsBase"
+
+
+      - name: Build Bridge Release x64
+        shell: pwsh
+        run: |
+          msbuild bridge/RJP.Signer.Bridge/RJP.Signer.Bridge.csproj /restore /t:Build /p:Configuration=Release /p:Platform=AnyCPU /m
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer EXE
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "ISCC.exe não encontrado" }
+          $version = "${{ steps.meta.outputs.version }}"
+          & $iscc "/DMyAppVersion=$version" bridge/installer/RJP_Signer_Bridge.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: RJP-Signer-Bridge-Setup-V${{ steps.meta.outputs.version }}
+          path: bridge/installer/output/RJP_Signer_Bridge_Setup_*.exe
+          if-no-files-found: error

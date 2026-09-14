@@ -1,0 +1,61 @@
+name: Build RJP Signer Windows Bridge
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'bridge/**'
+      - '.github/workflows/build-bridge-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-bridge:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Validate Bridge framework references
+        shell: pwsh
+        run: |
+          $proj = Get-Content bridge/RJP.Signer.Bridge/RJP.Signer.Bridge.csproj -Raw
+          if ($proj -notmatch 'Reference Include="System.Xml"') { throw "System.Xml reference missing" }
+          Write-Host "Bridge references OK: System.Xml + System.Security + WindowsBase"
+
+
+      - name: Build RJP Signer Bridge (.NET Framework 4.8)
+        shell: pwsh
+        run: |
+          msbuild bridge/RJP.Signer.Bridge/RJP.Signer.Bridge.csproj /restore /t:Build /p:Configuration=Release /p:Platform=AnyCPU /m
+
+      - name: Prepare artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bridge/artifact | Out-Null
+          Copy-Item bridge/RJP.Signer.Bridge/bin/Release/RJP.Signer.Bridge.exe bridge/artifact/
+          if (Test-Path bridge/RJP.Signer.Bridge/bin/Release/Pkcs11Interop.dll) { Copy-Item bridge/RJP.Signer.Bridge/bin/Release/Pkcs11Interop.dll bridge/artifact/ }
+          if (Test-Path bridge/RJP.Signer.Bridge/bin/Release/RJP.Signer.Bridge.exe.config) { Copy-Item bridge/RJP.Signer.Bridge/bin/Release/RJP.Signer.Bridge.exe.config bridge/artifact/ }
+          Copy-Item bridge/START_BRIDGE.bat bridge/artifact/
+          Copy-Item bridge/README_BRIDGE.md bridge/artifact/
+
+      - name: Read project version
+        id: meta
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Windows Bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: RJP-Signer-Bridge-Windows-V${{ steps.meta.outputs.version }}
+          path: bridge/artifact/*
+          if-no-files-found: error
