@@ -44,9 +44,16 @@ O instalador é gerado **sem assinatura de código**. O Windows SmartScreen pode
 Workflow Windows robusto: upload por wildcard recursivo e validação explícita do EXE. Não reutilizar um run antigo; fazer novo commit/push para disparar este workflow.
 
 
-## V4.4 — Imagens e preservação do PDF
+## V4.5 — Imagens e preservação do PDF
 - Novo modo **Imagens** para selecionar fotografias/imagens existentes.
 - Botão **Apagar** e tecla Delete ocultam a imagem através de uma camada PDF editável, sem rasterizar/reconstruir as restantes páginas.
 - O conteúdo original, fontes, espaçamentos e restantes imagens não são recomprimidos.
 - A remoção é gravada como objeto editável do próprio PDF.
 - O tamanho do ficheiro pode variar ligeiramente após qualquer gravação PDF; não é tecnicamente possível garantir o mesmo número exato de bytes.
+
+
+## V4.5
+- Remoção de imagens sem moldura/annotation fantasma: a máscara é gravada diretamente no conteúdo da página, sem widget AcroForm.
+- Inserção de imagens PNG/JPG/WebP (WebP é convertido para PNG antes de gravar).
+- Imagens inseridas podem ser movidas, redimensionadas e apagadas antes de guardar; ao reabrir, continuam detetáveis pelo modo Imagens.
+- Mantém WebApp, Android e Windows no mesmo workflow.
