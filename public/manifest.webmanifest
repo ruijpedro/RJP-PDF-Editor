@@ -1,1 +1,14 @@
-{"name":"RJP PDF Editor","short_name":"RJP PDF","start_url":"./","display":"standalone","background_color":"#e9edf2","theme_color":"#0b6f61"}
+{
+  "name": "RJP PDF Editor",
+  "short_name": "RJP PDF",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#e9edf2",
+  "theme_color": "#0b6f61",
+  "icons": [
+    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"./icons/icon-256.png","sizes":"256x256","type":"image/png"},
+    {"src":"./icons/icon-384.png","sizes":"384x384","type":"image/png"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}

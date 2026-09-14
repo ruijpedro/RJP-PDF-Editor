@@ -63,7 +63,11 @@ Workflow Windows robusto: upload por wildcard recursivo e validação explícita
 Interface unificada Windows/Web/Android, inserção imediata de imagens na página ativa e remoção visual sem moldura residual.
 
 
-## V4.6.3 — correção de abertura de PDF
+## V4.6.4 — correção de abertura de PDF
 - Corrige erro `Cannot set properties of null (setting 'textContent')`.
 - Adiciona o elemento `docName` à barra superior.
 - Torna as atualizações da interface null-safe para Web, Android e Windows.
+
+
+## Ícone V4.6.4
+O pacote inclui o ícone RJP PDF Editor para Web/PWA, Android (todas as densidades + adaptive icon) e Windows (.ico). O workflow aplica automaticamente o ícone Android depois de criar o projeto Capacitor.
