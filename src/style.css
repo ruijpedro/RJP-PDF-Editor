@@ -123,3 +123,12 @@ body { overflow:hidden !important; }
   .page-indicator { display:none; }
   .properties-panel { max-height:26vh !important; }
 }
+\n/* V4.7 — gestão de páginas */
+.page-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.page-actions button{min-height:38px;border:1px solid #cfd9e2;background:#fff;border-radius:7px;padding:6px 8px;cursor:pointer}.page-actions button:hover:not(:disabled){background:#e8f3ff;border-color:#7bbcff}.page-actions button:disabled{opacity:.45;cursor:not-allowed}.page-actions .danger{grid-column:1/-1;color:#d92d2d;border-color:#e34646}.workspace[data-mode="pages"] .pdf-page{cursor:pointer}.workspace[data-mode="pages"] .pdf-page:hover{outline:2px solid #0a7ff0;outline-offset:3px}@media(max-width:980px){.page-props{display:block}.page-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}\n
+
+/* V4.8 — combinar PDFs por drag & drop + abrir/fechar edição */
+#editLockBtn.locked{background:#fff3cd;border-color:#e2b93b;color:#6f5500;font-weight:700}
+.editing-locked .tool-sidebar .tool,.editing-locked .properties-panel input,.editing-locked .properties-panel select,.editing-locked .properties-panel .page-actions button,.editing-locked #insertImageBtn,.editing-locked #panelDeleteImage{pointer-events:none;opacity:.48}
+.editing-locked .pdf-form-text,.editing-locked .pdf-form-checkbox,.editing-locked .pdf-form-select,.editing-locked .text-hit,.editing-locked .image-hit,.editing-locked .edit-box{pointer-events:none!important}
+.workspace.drag{outline:4px dashed #0a7ff0;outline-offset:-8px;background:#dfefff}
+.drop-choice{position:fixed;inset:0;z-index:9999;background:#10253688;display:grid;place-items:center;padding:20px}.drop-card{width:min(460px,92vw);background:#fff;border-radius:14px;box-shadow:0 18px 55px #0005;padding:24px}.drop-card h3{margin:0 0 8px;font-size:21px}.drop-card p{color:#617180;margin:0 0 18px}.drop-card>div{display:grid;grid-template-columns:1fr 1fr;gap:9px}.drop-card button{min-height:46px;border:1px solid #cbd7e0;background:#fff;border-radius:8px;font-weight:650}.drop-card button[data-pos="start"],.drop-card button[data-pos="end"]{background:#087cf0;color:#fff;border-color:#087cf0}.drop-card button[data-pos="cancel"]{grid-column:1/-1}

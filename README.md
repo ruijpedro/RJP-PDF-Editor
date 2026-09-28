@@ -71,3 +71,14 @@ Interface unificada Windows/Web/Android, inserção imediata de imagens na pági
 
 ## Ícone V4.6.4
 O pacote inclui o ícone RJP PDF Editor para Web/PWA, Android (todas as densidades + adaptive icon) e Windows (.ico). O workflow aplica automaticamente o ícone Android depois de criar o projeto Capacitor.
+
+
+## V4.8 — Gestão de páginas
+No PDF aberto: adicionar página em branco antes/depois, remover página atual, duplicar página e importar todas as páginas de outro PDF. Disponível na WebApp, Android e Windows.
+
+
+## V4.8
+- Drag & drop de um ou vários PDFs sobre um documento aberto.
+- Escolha de inserção no início ou no fim.
+- 🔓 Editável / 🔒 Fechado para impedir alterações acidentais.
+- Mantém gestão de páginas, OCR, texto, imagens e scroll contínuo.

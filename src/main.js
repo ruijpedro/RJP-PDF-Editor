@@ -9,7 +9,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
-const APP_SESSION_VERSION = '4.6.3-scroll-real-fix';
+const APP_SESSION_VERSION = '4.8.0-combine-lock';
 
 const editor = {
   pdfBytes: null,
@@ -26,6 +26,8 @@ const editor = {
   dirty: false,
   detectedLines: {},
   pendingImage: null,
+  currentPage: 1,
+  editingEnabled: true,
 };
 
 const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
@@ -36,11 +38,11 @@ function shell(){
   <div class="app-shell">
     <header class="app-header">
       <div class="app-title"><div class="app-logo">▤</div><div><strong>RJP PDF Editor</strong><small>Editar. Inserir. Apagar. Sem rastos.</small></div></div>
-      <div class="app-version"><span>RJP</span><strong>V4.6.3</strong></div>
+      <div class="app-version"><span>RJP</span><strong>V4.8</strong></div>
     </header>
     <div class="commandbar">
       <label class="button primary">📂 Abrir<input id="fileInput" type="file" accept="application/pdf,.pdf" hidden></label>
-      <button id="saveBtn" disabled>💾 Guardar</button><button id="shareBtn" disabled>↗ Partilhar</button>
+      <button id="saveBtn" disabled>💾 Guardar</button><button id="shareBtn" disabled>↗ Partilhar</button><button id="editLockBtn" disabled>🔓 Editável</button>
       <span id="docName" class="doc-name">Nenhum PDF aberto</span>
       <span class="sep"></span><button id="zoomOut">−</button><span id="zoomLabel">125%</span><button id="zoomIn">+</button>
       <span id="pageIndicator" class="page-indicator">Página — / —</span><span class="sep"></span><button id="undoBtn">↶</button><button id="deleteBtn" disabled>🗑 Apagar</button><button id="closeBtn" disabled>Fechar</button>
@@ -51,6 +53,8 @@ function shell(){
         <button id="addMode" class="tool">T <span>Adicionar texto</span></button>
         <label class="tool file-tool" id="insertImageLabel">▧ <span>Inserir imagem</span><input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden></label>
         <button id="imageMode" class="tool">▣ <span>Imagens</span></button>
+        <button id="pagesMode" class="tool">▤ <span>Gerir páginas</span></button>
+        <input id="importPagesInput" type="file" accept="application/pdf,.pdf" multiple hidden>
         <button id="checkMode" class="tool">✓ <span>Marcar</span></button>
         <button id="makeEditableBtn" class="tool" disabled>⚡ <span>Tornar editável</span></button>
         <button id="ocrBtn" class="tool" disabled>⌕ <span>OCR / Reconhecer</span></button>
@@ -67,6 +71,14 @@ function shell(){
         <div class="panel-section image-props">
           <h3>Imagem</h3><p class="muted">Seleciona uma imagem existente ou insere uma nova.</p>
           <button id="panelDeleteImage" class="danger" disabled>🗑 Remover imagem</button>
+        </div>
+        <div class="panel-section page-props">
+          <h3>Páginas</h3><p class="muted" id="pagePanelInfo">Abre um PDF para gerir páginas.</p>
+          <div class="page-actions">
+            <button id="addPageBefore" disabled>＋ Antes</button><button id="addPageAfter" disabled>＋ Depois</button>
+            <button id="importPagesBtn" disabled>⇩ Importar PDF</button><button id="duplicatePageBtn" disabled>⧉ Duplicar</button>
+            <button id="deletePageBtn" class="danger" disabled>🗑 Remover página</button>
+          </div>
         </div>
         <div class="panel-section text-props">
           <h3>Texto</h3>
@@ -91,6 +103,13 @@ function bindUI(){
   document.querySelector('#addMode').onclick = () => setMode('add');
   document.querySelector('#checkMode').onclick = () => setMode('check');
   document.querySelector('#imageMode').onclick = () => setMode('image');
+  document.querySelector('#pagesMode').onclick = () => setMode('pages');
+  document.querySelector('#addPageBefore').onclick = () => addBlankPage(false);
+  document.querySelector('#addPageAfter').onclick = () => addBlankPage(true);
+  document.querySelector('#deletePageBtn').onclick = deleteCurrentPage;
+  document.querySelector('#duplicatePageBtn').onclick = duplicateCurrentPage;
+  document.querySelector('#importPagesBtn').onclick = () => document.querySelector('#importPagesInput').click();
+  document.querySelector('#importPagesInput').addEventListener('change', async e => { const fs=[...e.target.files]; if(fs.length) await importPdfFiles(fs,'after'); e.target.value=''; });
   document.querySelector('#imageInput').addEventListener('change', e => e.target.files[0] && prepareImageInsert(e.target.files[0]));
   document.querySelector('#insertImageBtn').onclick = () => document.querySelector('#imageInput').click();
   document.querySelector('#panelDeleteImage').onclick = deleteSelected;
@@ -106,13 +125,18 @@ function bindUI(){
   document.querySelector('#saveBtn').onclick = savePdf;
   document.querySelector('#shareBtn').onclick = shareCurrentPdf;
   document.querySelector('#closeBtn').onclick = closePdf;
+  document.querySelector('#editLockBtn').onclick = toggleEditing;
 
   const ws = document.querySelector('#workspace');
   ['dragenter','dragover'].forEach(ev=>ws.addEventListener(ev,e=>{e.preventDefault();ws.classList.add('drag');}));
   ['dragleave','drop'].forEach(ev=>ws.addEventListener(ev,e=>{e.preventDefault();ws.classList.remove('drag');}));
-  ws.addEventListener('drop', e => {
-    const f = [...e.dataTransfer.files].find(f=>f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf'));
-    if(f) openFile(f);
+  ws.addEventListener('drop', async e => {
+    const files=[...e.dataTransfer.files].filter(f=>f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf'));
+    if(!files.length)return;
+    if(!editor.pdfBytes){ await openFile(files[0]); if(files.length>1) await importPdfFiles(files.slice(1),'end'); return; }
+    if(!editor.editingEnabled){status('Documento fechado para edição. Carrega em 🔒 Fechado para desbloquear.');return;}
+    const where=await askDropPosition(files.length);
+    if(where) await importPdfFiles(files,where);
   });
   ws.addEventListener('scroll', updateVisiblePageIndicator, {passive:true});
   ws.addEventListener('wheel', e => {
@@ -126,7 +150,7 @@ function bindUI(){
   window.addEventListener('keydown', e => {
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault(); if(editor.pdfBytes) savePdf();}
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); undo();}
-    if((e.key==='Delete'||e.key==='Backspace') && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) deleteSelected();
+    if(editor.editingEnabled && (e.key==='Delete'||e.key==='Backspace') && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) deleteSelected();
     if(e.key==='Escape') selectEdit(null);
     if(editor.pdfjs && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){
       const ws=document.querySelector('#workspace');
@@ -146,21 +170,55 @@ function updateVisiblePageIndicator(){
   const wr=ws.getBoundingClientRect(), target=wr.top+Math.min(wr.height*.35,220);
   let best=pages[0],dist=Infinity;
   for(const p of pages){const r=p.getBoundingClientRect();const y=Math.max(r.top,Math.min(target,r.bottom));const d=Math.abs(y-target);if(d<dist){dist=d;best=p;}}
-  out.textContent=`Página ${Number(best.dataset.page)||1} / ${editor.pdfjs.numPages}`;
+  editor.currentPage=Number(best.dataset.page)||1;
+  out.textContent=`Página ${editor.currentPage} / ${editor.pdfjs.numPages}`;
+  const pinfo=document.querySelector('#pagePanelInfo'); if(pinfo) pinfo.textContent=`Página ${editor.currentPage} de ${editor.pdfjs.numPages}`;
 }
 
 function status(t){ const el=document.querySelector('#status'); if(el) el.textContent=t; }
 function setMode(mode){
   editor.mode=mode; selectEdit(null);
-  ['edit','add','check','image'].forEach(m=>document.querySelector(`#${m}Mode`)?.classList.toggle('active',m===mode));
+  ['edit','add','check','image','pages'].forEach(m=>document.querySelector(`#${m}Mode`)?.classList.toggle('active',m===mode));
   document.querySelector('#insertImageLabel')?.classList.toggle('active',mode==='imageInsert');
   document.querySelector('#workspace').dataset.mode=mode;
-  status(mode==='edit'?'Modo editar: clica diretamente num texto existente.':mode==='add'?'Modo adicionar: clica na página para criar um novo campo.':mode==='check'?'Modo marcar: clica onde queres adicionar uma marca.':mode==='imageInsert'?'Inserir imagem: clica na página onde queres colocar a imagem.':'Modo imagens: clica numa fotografia/imagem existente e usa Apagar ou a tecla Delete.');
+  status(mode==='edit'?'Modo editar: clica diretamente num texto existente.':mode==='add'?'Modo adicionar: clica na página para criar um novo campo.':mode==='check'?'Modo marcar: clica onde queres adicionar uma marca.':mode==='imageInsert'?'Inserir imagem: clica na página onde queres colocar a imagem.':mode==='pages'?'Gerir páginas: seleciona a página visível e usa Adicionar, Importar, Duplicar ou Remover.':'Modo imagens: clica numa fotografia/imagem existente e usa Apagar ou a tecla Delete.');
+}
+function toggleEditing(){
+  if(!editor.pdfBytes)return;
+  editor.editingEnabled=!editor.editingEnabled;
+  if(!editor.editingEnabled){selectEdit(null);editor.mode='edit';}
+  updateChrome();
+  status(editor.editingEnabled?'Edição aberta. Podes alterar texto, imagens e páginas.':'Edição fechada. Documento protegido contra alterações acidentais.');
+}
+function askDropPosition(count=1){
+  return new Promise(resolve=>{
+    document.querySelector('.drop-choice')?.remove();
+    const m=document.createElement('div');m.className='drop-choice';m.innerHTML=`<div class="drop-card"><h3>Adicionar ${count} PDF${count>1?'s':''}</h3><p>Onde queres inserir no documento aberto?</p><div><button data-pos="start">⇤ No início</button><button data-pos="end">⇥ No fim</button><button data-pos="cancel">Cancelar</button></div></div>`;
+    m.onclick=e=>{const b=e.target.closest('button');if(!b)return;const v=b.dataset.pos;m.remove();resolve(v==='cancel'?null:v);};document.body.appendChild(m);
+  });
+}
+async function importPdfFiles(files,where='end'){
+  if(!editor.pdfBytes||!files?.length)return;
+  try{
+    status(`A juntar ${files.length} PDF(s)…`);
+    const loaded=[];
+    for(const file of files){const bytes=new Uint8Array(await file.arrayBuffer());loaded.push({file,doc:await PDFDocument.load(bytes,{ignoreEncryption:false})});}
+    let added=0;
+    await applyPageMutation(async doc=>{
+      let insert0=where==='start'?0:doc.getPageCount();
+      for(const item of loaded){const idx=[...Array(item.doc.getPageCount()).keys()];const copies=await doc.copyPages(item.doc,idx);copies.forEach((pg,i)=>doc.insertPage(insert0+i,pg));insert0+=copies.length;added+=copies.length;}
+      if(where==='start'){remapEditsForInsert(0,added);editor.currentPage=1;} else editor.currentPage=Math.max(1,doc.getPageCount()-added+1);
+    },`${added} página(s) adicionada(s) ${where==='start'?'no início':'no fim'} do documento.`);
+  }catch(e){console.error(e);alert('Não foi possível juntar os PDFs: '+e.message);status('Erro ao juntar PDFs.');}
 }
 function updateChrome(){
   const has=!!editor.pdfBytes;
   const docName=document.querySelector('#docName'); if(docName) docName.textContent=has?`${editor.fileName}${editor.dirty?' • alterado':''}`:'Nenhum PDF aberto';
-  ['saveBtn','shareBtn','closeBtn','makeEditableBtn','ocrBtn'].forEach(id=>document.querySelector(`#${id}`).disabled=!has);
+  ['saveBtn','shareBtn','closeBtn','editLockBtn'].forEach(id=>{const el=document.querySelector(`#${id}`);if(el)el.disabled=!has;});
+  ['makeEditableBtn','ocrBtn','addPageBefore','addPageAfter','importPagesBtn','duplicatePageBtn','deletePageBtn'].forEach(id=>{const el=document.querySelector(`#${id}`);if(el)el.disabled=!has||!editor.editingEnabled;});
+  const lock=document.querySelector('#editLockBtn'); if(lock){lock.textContent=editor.editingEnabled?'🔓 Editável':'🔒 Fechado';lock.classList.toggle('locked',!editor.editingEnabled);}
+  document.querySelector('.app-shell')?.classList.toggle('editing-locked',!editor.editingEnabled);
+  const pinfo=document.querySelector('#pagePanelInfo'); if(pinfo) pinfo.textContent=has?`Página ${editor.currentPage||1} de ${editor.pdfjs?.numPages||'—'}`:'Abre um PDF para gerir páginas.';
   const deleteBtn=document.querySelector('#deleteBtn'); if(deleteBtn) deleteBtn.disabled=!editor.selectedId;
   const panelDel=document.querySelector('#panelDeleteImage'); if(panelDel) panelDel.disabled=!editor.selectedId;
   const textTarget = getSelectedTextTarget();
@@ -181,7 +239,7 @@ async function dbSet(k,v){const db=await dbOpen();return new Promise((res,rej)=>
 async function dbGet(k){const db=await dbOpen();return new Promise((res,rej)=>{const r=db.transaction('session').objectStore('session').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
 async function dbClear(){const db=await dbOpen();return new Promise((res,rej)=>{const tx=db.transaction('session','readwrite');tx.objectStore('session').clear();tx.oncomplete=res;tx.onerror=()=>rej(tx.error);});}
 let persistTimer;
-function persistSoon(){clearTimeout(persistTimer);persistTimer=setTimeout(async()=>{try{await dbSet('meta',{v:APP_SESSION_VERSION,fileName:editor.fileName,edits:editor.edits,formValues:editor.formValues,formStyles:editor.formStyles,scale:editor.scale});if(editor.pdfBytes)await dbSet('pdf',editor.pdfBytes);}catch(e){console.warn(e);}},300);}
+function persistSoon(){clearTimeout(persistTimer);persistTimer=setTimeout(async()=>{try{await dbSet('meta',{v:APP_SESSION_VERSION,fileName:editor.fileName,edits:editor.edits,formValues:editor.formValues,formStyles:editor.formStyles,scale:editor.scale,editingEnabled:editor.editingEnabled});if(editor.pdfBytes)await dbSet('pdf',editor.pdfBytes);}catch(e){console.warn(e);}},300);}
 
 async function openFile(file){
   const bytes=new Uint8Array(await file.arrayBuffer());
@@ -193,7 +251,7 @@ async function loadPdf(bytes,name='documento.pdf',fresh=false){
     editor.pdfBytes=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
     editor.fileName=name;
     editor.detectedLines={};
-    if(fresh){editor.edits=[];editor.formValues={};editor.formStyles={};editor.selectedFieldName=null;editor.undo=[];editor.dirty=false;await dbClear();}
+    if(fresh){editor.currentPage=1;editor.edits=[];editor.formValues={};editor.formStyles={};editor.selectedFieldName=null;editor.undo=[];editor.dirty=false;editor.editingEnabled=true;await dbClear();}
     editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise;
     updateChrome(); await renderAll(); persistSoon();
     const textPages=Object.values(editor.detectedLines).filter(x=>x.length).length;
@@ -248,7 +306,7 @@ async function renderPage(pageNum,ws){
     }
   }catch(e){editor.detectedLines[pageNum]=[];console.warn('Text layer',e);}
   const editLayer=document.createElement('div');editLayer.className='edit-layer';section.appendChild(editLayer);
-  section.addEventListener('click',ev=>{const r=section.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(editor.mode==='imageInsert'&&editor.pendingImage){ev.preventDefault();ev.stopPropagation();addPendingImageAt(pageNum,viewport,x,y);return;}if(ev.target!==section&&ev.target!==canvas&&ev.target!==editLayer)return;if(editor.mode==='add')addTextAt(pageNum,viewport,x,y);else if(editor.mode==='check')addCheckAt(pageNum,viewport,x,y);else selectEdit(null);},true);
+  section.addEventListener('click',ev=>{if(!editor.editingEnabled)return;const r=section.getBoundingClientRect(),x=ev.clientX-r.left,y=ev.clientY-r.top;if(editor.mode==='imageInsert'&&editor.pendingImage){ev.preventDefault();ev.stopPropagation();addPendingImageAt(pageNum,viewport,x,y);return;}if(ev.target!==section&&ev.target!==canvas&&ev.target!==editLayer)return;if(editor.mode==='add')addTextAt(pageNum,viewport,x,y);else if(editor.mode==='check')addCheckAt(pageNum,viewport,x,y);else selectEdit(null);},true);
   renderEditsForPage(pageNum,viewport,editLayer);ws.appendChild(section);
 }
 
@@ -450,6 +508,65 @@ async function ocrScannedPages(){
   }catch(e){console.error(e);alert('OCR falhou: '+e.message);status('Erro no OCR.');}
 }
 
+function remapEditsForInsert(atIndex0,count=1){
+  const first=atIndex0+1;
+  editor.edits.forEach(e=>{if(e.page>=first)e.page+=count;});
+}
+function remapEditsForDelete(pageNum){
+  editor.edits=editor.edits.filter(e=>e.page!==pageNum).map(e=>({...e,page:e.page>pageNum?e.page-1:e.page}));
+}
+async function applyPageMutation(mutator, message){
+  if(!editor.pdfBytes)return; if(!editor.editingEnabled){status('Documento fechado para edição.');return;}
+  try{
+    status('A atualizar páginas…');
+    const doc=await PDFDocument.load(editor.pdfBytes,{ignoreEncryption:false});
+    await mutator(doc);
+    const out=await doc.save({useObjectStreams:true});
+    editor.pdfBytes=new Uint8Array(out); editor.dirty=true; editor.selectedId=null; editor.selectedFieldName=null;
+    editor.pdfjs=await pdfjsLib.getDocument({data:editor.pdfBytes.slice()}).promise;
+    editor.currentPage=clamp(editor.currentPage||1,1,editor.pdfjs.numPages);
+    await renderAll(); updateChrome(); persistSoon(); status(message);
+    requestAnimationFrame(()=>scrollToPage(editor.currentPage));
+  }catch(e){console.error(e);alert('Não foi possível alterar as páginas: '+e.message);status('Erro ao gerir páginas.');}
+}
+function scrollToPage(n){
+  const ws=document.querySelector('#workspace'),el=ws?.querySelector(`.pdf-page[data-page="${n}"]`);
+  if(ws&&el)ws.scrollTo({top:Math.max(0,el.offsetTop-12),behavior:'smooth'});
+}
+async function addBlankPage(after=true){
+  const current=clamp(editor.currentPage||1,1,editor.pdfjs?.numPages||1), insert0=after?current:current-1;
+  await applyPageMutation(async doc=>{
+    const ref=doc.getPage(current-1),size=ref.getSize();
+    doc.insertPage(insert0,[size.width,size.height]); remapEditsForInsert(insert0,1);
+    editor.currentPage=insert0+1;
+  },`Página em branco adicionada ${after?'depois':'antes'} da página ${current}.`);
+}
+async function deleteCurrentPage(){
+  if(!editor.pdfjs)return; const total=editor.pdfjs.numPages,current=clamp(editor.currentPage||1,1,total);
+  if(total<=1){alert('O PDF tem apenas uma página. Não é possível remover a única página.');return;}
+  if(!confirm(`Remover a página ${current} de ${total}?`))return;
+  await applyPageMutation(async doc=>{doc.removePage(current-1);remapEditsForDelete(current);editor.currentPage=Math.min(current,total-1);},`Página ${current} removida.`);
+}
+async function duplicateCurrentPage(){
+  if(!editor.pdfjs)return; const current=clamp(editor.currentPage||1,1,editor.pdfjs.numPages);
+  await applyPageMutation(async doc=>{
+    const source=await PDFDocument.load(editor.pdfBytes,{ignoreEncryption:false});
+    const [copy]=await doc.copyPages(source,[current-1]); doc.insertPage(current,copy); remapEditsForInsert(current,1);
+    const clones=editor.edits.filter(e=>e.page===current).map(e=>({...e,id:uid(),page:current+1})); editor.edits.push(...clones); editor.currentPage=current+1;
+  },`Página ${current} duplicada.`);
+}
+async function importPagesFromPdf(file){
+  if(!editor.pdfBytes||!file)return; const current=clamp(editor.currentPage||1,1,editor.pdfjs.numPages);
+  try{
+    const incomingBytes=new Uint8Array(await file.arrayBuffer()); const incoming=await PDFDocument.load(incomingBytes,{ignoreEncryption:false}); const count=incoming.getPageCount();
+    if(!count)return;
+    await applyPageMutation(async doc=>{
+      const copies=await doc.copyPages(incoming,[...Array(count).keys()]); remapEditsForInsert(current,count);
+      copies.forEach((pg,i)=>doc.insertPage(current+i,pg)); editor.currentPage=current+1;
+    },`${count} página(s) importada(s) de “${file.name}” depois da página ${current}.`);
+  }catch(e){console.error(e);alert('Não foi possível importar as páginas: '+e.message);}
+}
+
 async function setZoom(v){editor.scale=clamp(v,.6,2.5);updateChrome();if(editor.pdfjs)await renderAll();persistSoon();}
 function pdfSafeText(value=''){return String(value??'').replace(/[☑☒✓✔]/g,'X').replace(/[☐□]/g,'').replace(/[–—]/g,'-').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/…/g,'...').normalize('NFKC').replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g,'');}
 
@@ -498,7 +615,7 @@ async function savePdf(){
 function downloadBytes(bytes,name='documento.pdf'){const data=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes),blob=new Blob([data],{type:'application/pdf'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.style.display='none';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);}
 function editedFileName(name='documento.pdf'){const base=String(name).replace(/\.pdf$/i,'').replace(/[\\/:*?"<>|]+/g,'_').trim()||'documento';return `${base}_EDITAVEL.pdf`;}
 async function shareCurrentPdf(){if(!editor.pdfBytes)return;try{const name=editedFileName(editor.fileName);if(navigator.share){const file=new File([editor.pdfBytes],name,{type:'application/pdf'});if(!navigator.canShare||navigator.canShare({files:[file]})){await navigator.share({title:'RJP PDF Editor Universal',files:[file]});return;}}downloadBytes(editor.pdfBytes,name);}catch(e){if(e?.name!=='AbortError')alert('Não foi possível partilhar: '+e.message);}}
-async function closePdf(){if(editor.dirty&&!confirm('Há alterações não guardadas. Fechar mesmo assim?'))return;editor.pdfBytes=null;editor.pdfjs=null;editor.edits=[];editor.formValues={};editor.formStyles={};editor.undo=[];editor.selectedId=null;editor.selectedFieldName=null;editor.dirty=false;editor.detectedLines={};editor.pendingImage=null;await dbClear();document.querySelector('#workspace').innerHTML='<div class="dropzone"><div class="dropicon">PDF</div><h2>Abre ou arrasta um PDF</h2><p>PDF normal: usa “Tornar editável”. PDF digitalizado: usa OCR.</p></div>';document.querySelector('#workspace').classList.add('empty');updateChrome();status('Nenhum PDF aberto.');}
-async function restore(){try{const meta=await dbGet('meta'),bytes=await dbGet('pdf');if(meta?.v===APP_SESSION_VERSION&&bytes){editor.edits=meta.edits||[];editor.formValues=meta.formValues||{};editor.formStyles=meta.formStyles||{};editor.scale=meta.scale||1.25;editor.dirty=editor.edits.length>0||Object.keys(editor.formValues).length>0||Object.keys(editor.formStyles).length>0;await loadPdf(bytes,meta.fileName||'documento.pdf',false);status('Sessão anterior restaurada.');return;}await dbClear();}catch(e){console.warn(e);}}
+async function closePdf(){if(editor.dirty&&!confirm('Há alterações não guardadas. Fechar mesmo assim?'))return;editor.pdfBytes=null;editor.pdfjs=null;editor.edits=[];editor.formValues={};editor.formStyles={};editor.undo=[];editor.selectedId=null;editor.selectedFieldName=null;editor.dirty=false;editor.detectedLines={};editor.pendingImage=null;editor.currentPage=1;editor.editingEnabled=true;await dbClear();document.querySelector('#workspace').innerHTML='<div class="dropzone"><div class="dropicon">PDF</div><h2>Abre ou arrasta um PDF</h2><p>PDF normal: usa “Tornar editável”. PDF digitalizado: usa OCR.</p></div>';document.querySelector('#workspace').classList.add('empty');updateChrome();status('Nenhum PDF aberto.');}
+async function restore(){try{const meta=await dbGet('meta'),bytes=await dbGet('pdf');if(meta?.v===APP_SESSION_VERSION&&bytes){editor.edits=meta.edits||[];editor.formValues=meta.formValues||{};editor.formStyles=meta.formStyles||{};editor.scale=meta.scale||1.25;editor.editingEnabled=meta.editingEnabled!==false;editor.dirty=editor.edits.length>0||Object.keys(editor.formValues).length>0||Object.keys(editor.formStyles).length>0;await loadPdf(bytes,meta.fileName||'documento.pdf',false);status('Sessão anterior restaurada.');return;}await dbClear();}catch(e){console.warn(e);}}
 
 shell();bindUI();setMode('edit');updateChrome();restore();
