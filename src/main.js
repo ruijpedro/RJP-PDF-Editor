@@ -9,7 +9,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const app = document.querySelector('#app');
-const APP_SESSION_VERSION = '4.8.0-combine-lock';
+const APP_SESSION_VERSION = '4.9.0-text-align';
 
 const editor = {
   pdfBytes: null,
@@ -86,6 +86,8 @@ function shell(){
             <option value="Helvetica">Helvetica / Arial</option><option value="HelveticaBold">Helvetica Negrito</option><option value="HelveticaOblique">Helvetica Itálico</option><option value="TimesRoman">Times Roman</option><option value="TimesRomanBold">Times Negrito</option><option value="TimesRomanItalic">Times Itálico</option><option value="Courier">Courier</option><option value="CourierBold">Courier Negrito</option>
           </select></label>
           <label>Tamanho<div class="size-row"><button id="fontSmaller" disabled>A−</button><input id="fontSize" type="number" min="5" max="72" step="1" value="10" disabled><button id="fontLarger" disabled>A+</button></div></label>
+          <label>Alinhamento<div class="align-row"><button type="button" data-align="left" title="Esquerda">☰◀</button><button type="button" data-align="center" title="Centro">☰</button><button type="button" data-align="right" title="Direita">▶☰</button></div></label>
+          <label>Cor do texto <input id="textColor" type="color" value="#000000" disabled></label>
         </div>
         <div class="panel-section quality"><h3>Qualidade</h3><label><input type="checkbox" checked disabled> Manter qualidade original</label><label><input type="checkbox" checked disabled> Sem recompressão desnecessária</label></div>
       </aside>
@@ -115,6 +117,8 @@ function bindUI(){
   document.querySelector('#panelDeleteImage').onclick = deleteSelected;
   document.querySelector('#undoBtn').onclick = undo;
   document.querySelector('#deleteBtn').onclick = deleteSelected;
+  document.querySelectorAll('[data-align]').forEach(b=>b.onclick=()=>applyTextProperty('align',b.dataset.align));
+  document.querySelector('#textColor').oninput=e=>applyTextProperty('color',e.target.value);
   document.querySelector('#fontFamily').onchange = e => applyFontFamily(e.target.value);
   document.querySelector('#fontSize').onchange = e => applyFontSize(Number(e.target.value));
   document.querySelector('#fontSize').oninput = e => applyFontSize(Number(e.target.value), true);
@@ -222,13 +226,16 @@ function updateChrome(){
   const deleteBtn=document.querySelector('#deleteBtn'); if(deleteBtn) deleteBtn.disabled=!editor.selectedId;
   const panelDel=document.querySelector('#panelDeleteImage'); if(panelDel) panelDel.disabled=!editor.selectedId;
   const textTarget = getSelectedTextTarget();
-  ['fontFamily','fontSize','fontSmaller','fontLarger'].forEach(id=>{const el=document.querySelector(`#${id}`);if(el)el.disabled=!textTarget;});
+  ['fontFamily','fontSize','fontSmaller','fontLarger','textColor'].forEach(id=>{const el=document.querySelector(`#${id}`);if(el)el.disabled=!textTarget;});
   if(textTarget){
     const style=getTargetStyle(textTarget);
     const ff=document.querySelector('#fontFamily'),fs=document.querySelector('#fontSize');
     if(ff)ff.value=style.fontName||'Helvetica';
     if(fs)fs.value=Math.round(style.fontSize||10);
+    const color=document.querySelector('#textColor');if(color)color.value=style.color||'#000000';
+    document.querySelectorAll('[data-align]').forEach(b=>{b.disabled=!editor.editingEnabled;b.classList.toggle('active',b.dataset.align===(style.align||'left'));});
   }
+  if(!textTarget)document.querySelectorAll('[data-align]').forEach(b=>b.disabled=true);
   const zoomLabel=document.querySelector('#zoomLabel'); if(zoomLabel) zoomLabel.textContent=`${Math.round(editor.scale*100)}%`;
 }
 
@@ -344,7 +351,7 @@ async function renderFormFields(pdfPage,viewport,layer){
     else if(ann.fieldType==='Tx'){el=ann.multiLine?document.createElement('textarea'):document.createElement('input');if(el.tagName==='INPUT')el.type='text';el.className='pdf-form-text';el.value=(current??'').toString().replace(/^None$/,'');el.spellcheck=false;const detectedSize=Number(ann.defaultAppearanceData?.fontSize)||Math.max(6,Math.min(36,(height/editor.scale)*.58));if(!editor.formStyles[ann.fieldName])editor.formStyles[ann.fieldName]={fontSize:detectedSize,fontName:'Helvetica'};el.oninput=()=>{editor.formValues[ann.fieldName]=el.value;markDirty();};el.onfocus=()=>selectFormField(ann.fieldName,el);el.onclick=()=>selectFormField(ann.fieldName,el);}
     else if(ann.fieldType==='Ch'){el=document.createElement('select');el.className='pdf-form-select';for(const opt of ann.options||[]){const o=document.createElement('option'),val=typeof opt==='string'?opt:(opt.exportValue??opt.displayValue??'');o.value=val;o.textContent=typeof opt==='string'?opt:(opt.displayValue??opt.exportValue??'');el.appendChild(o);}el.value=(current??'').toString();el.onchange=()=>{editor.formValues[ann.fieldName]=el.value;markDirty();};}
     else continue;
-    el.dataset.field=ann.fieldName;el.title=ann.alternativeText||ann.fieldName;Object.assign(el.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`});if(ann.fieldType==='Tx'){const st=editor.formStyles[ann.fieldName]||{};applyPreviewFont(el,st.fontName||'Helvetica',st.fontSize||10);}layer.appendChild(el);
+    el.dataset.field=ann.fieldName;el.title=ann.alternativeText||ann.fieldName;Object.assign(el.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`});if(ann.fieldType==='Tx'){const st=editor.formStyles[ann.fieldName]||{};applyPreviewFont(el,st.fontName||'Helvetica',st.fontSize||10);applyTextFormatting(el,st);}layer.appendChild(el);
   }
 }
 
@@ -412,7 +419,7 @@ function getSelectedTextTarget(){
   return null;
 }
 function getTargetStyle(target){
-  if(target?.type==='edit')return {fontSize:Number(target.edit.fontSize)||10,fontName:target.edit.fontName||'Helvetica'};
+  if(target?.type==='edit')return target.edit;
   if(target?.type==='form')return editor.formStyles[target.name]||{fontSize:10,fontName:'Helvetica'};
   return {fontSize:10,fontName:'Helvetica'};
 }
@@ -426,6 +433,14 @@ function cssFontSpec(name='Helvetica'){
 function applyPreviewFont(el,name,size){const [family,weight,style]=cssFontSpec(name);el.style.fontFamily=family;el.style.fontWeight=weight;el.style.fontStyle=style;if(size)el.style.fontSize=`${Math.max(5,size)*editor.scale}px`;}
 function applyFontFamily(name){const t=getSelectedTextTarget();if(!t)return;if(t.type==='edit'){t.edit.fontName=name;const ta=document.querySelector(`.edit-box[data-id="${CSS.escape(t.edit.id)}"] textarea`);if(ta)applyPreviewFont(ta,name,t.edit.fontSize);}else{const st=editor.formStyles[t.name]||(editor.formStyles[t.name]={fontSize:10,fontName:'Helvetica'});st.fontName=name;const el=document.querySelector(`.pdf-form-text[data-field="${CSS.escape(t.name)}"]`);if(el)applyPreviewFont(el,name,st.fontSize);}markDirty();updateChrome();}
 function applyFontSize(size,live=false){size=clamp(Number(size)||10,5,72);const t=getSelectedTextTarget();if(!t)return;if(t.type==='edit'){t.edit.fontSize=size;const ta=document.querySelector(`.edit-box[data-id="${CSS.escape(t.edit.id)}"] textarea`);if(ta){applyPreviewFont(ta,t.edit.fontName||'Helvetica',size);ta.style.fontSize=`${Math.max(8,size*editor.scale)}px`;}}else{const st=editor.formStyles[t.name]||(editor.formStyles[t.name]={fontSize:10,fontName:'Helvetica'});st.fontSize=size;const el=document.querySelector(`.pdf-form-text[data-field="${CSS.escape(t.name)}"]`);if(el)applyPreviewFont(el,st.fontName||'Helvetica',size);}markDirty();if(!live)updateChrome();}
+function applyTextProperty(key,value){
+  if(!editor.editingEnabled)return;const t=getSelectedTextTarget();if(!t)return;
+  const st=t.type==='edit'?t.edit:(editor.formStyles[t.name]||(editor.formStyles[t.name]={fontSize:10,fontName:'Helvetica'}));
+  st[key]=value;const el=t.type==='edit'?document.querySelector(`.edit-box[data-id="${CSS.escape(t.edit.id)}"] textarea`):document.querySelector(`.pdf-form-text[data-field="${CSS.escape(t.name)}"]`);
+  if(el)applyTextFormatting(el,st);markDirty();updateChrome();
+}
+function applyTextFormatting(el,st){el.style.textAlign=st.align||'left';el.style.color=st.color||'#000000';}
+function pdfColor(hex){const h=/^#[0-9a-f]{6}$/i.test(hex||'')?hex:'#000000';return rgb(parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255);}
 function nudgeFontSize(delta){const t=getSelectedTextTarget();if(!t)return;const st=getTargetStyle(t);applyFontSize((Number(st.fontSize)||10)+delta);}
 function standardFontKey(name='Helvetica'){
   const map={Helvetica:StandardFonts.Helvetica,HelveticaBold:StandardFonts.HelveticaBold,HelveticaOblique:StandardFonts.HelveticaOblique,HelveticaBoldOblique:StandardFonts.HelveticaBoldOblique,TimesRoman:StandardFonts.TimesRoman,TimesRomanBold:StandardFonts.TimesRomanBold,TimesRomanItalic:StandardFonts.TimesRomanItalic,TimesRomanBoldItalic:StandardFonts.TimesRomanBoldItalic,Courier:StandardFonts.Courier,CourierBold:StandardFonts.CourierBold,CourierOblique:StandardFonts.CourierOblique};return map[name]||StandardFonts.Helvetica;
@@ -441,7 +456,7 @@ function renderEditsForPage(page,viewport,layer){
     }else if(e.kind==='imageAdd'){
       box.classList.add('image-added');const img=document.createElement('img');img.src=e.dataUrl;img.alt=e.name||'Imagem inserida';img.draggable=false;box.appendChild(img);
     }else{
-      const ta=document.createElement('textarea');ta.value=e.text||'';ta.spellcheck=false;applyPreviewFont(ta,e.fontName||'Helvetica',Math.max(5,e.fontSize||10));ta.style.fontSize=`${Math.max(8,(e.fontSize||10)*editor.scale)}px`;ta.rows=1;ta.onclick=ev=>{ev.stopPropagation();selectEdit(e.id)};ta.oninput=()=>{e.text=ta.value;markDirty();};box.appendChild(ta);
+      const ta=document.createElement('textarea');ta.value=e.text||'';ta.spellcheck=false;applyPreviewFont(ta,e.fontName||'Helvetica',Math.max(5,e.fontSize||10));ta.style.fontSize=`${Math.max(8,(e.fontSize||10)*editor.scale)}px`;applyTextFormatting(ta,e);ta.rows=1;ta.onclick=ev=>{ev.stopPropagation();selectEdit(e.id)};ta.oninput=()=>{e.text=ta.value;markDirty();};box.appendChild(ta);
     }
     const resize=document.createElement('span');resize.className='resize';box.appendChild(resize);
     box.addEventListener('pointerdown',ev=>{
@@ -576,7 +591,7 @@ async function savePdf(){
     const doc=await PDFDocument.load(editor.pdfBytes,{ignoreEncryption:false}),form=doc.getForm(),pages=doc.getPages();const embeddedFonts={};const getFont=async(name='Helvetica')=>embeddedFonts[name]||(embeddedFonts[name]=await doc.embedFont(standardFontKey(name)));const defaultFont=await getFont('Helvetica');
     const styledNames=new Set([...Object.keys(editor.formValues),...Object.keys(editor.formStyles)]);
     for(const name of styledNames){
-      const field=form.getFieldMaybe(name);if(!field)continue;const hasValue=Object.prototype.hasOwnProperty.call(editor.formValues,name),value=editor.formValues[name];try{if(field instanceof PDFTextField){if(hasValue)field.setText(pdfSafeText(value));const st=editor.formStyles[name];if(st){try{field.setFontSize(clamp(Number(st.fontSize)||10,5,72));}catch(_){ }try{field.updateAppearances(await getFont(st.fontName||'Helvetica'));}catch(err){console.warn('aparência campo',name,err);}}}else if(hasValue&&field instanceof PDFCheckBox)value?field.check():field.uncheck();else if(hasValue&&(field instanceof PDFDropdown||field instanceof PDFOptionList))field.select(pdfSafeText(value));else if(hasValue&&field instanceof PDFRadioGroup&&value)field.select(pdfSafeText(value));}catch(e){console.warn(name,e);}
+      const field=form.getFieldMaybe(name);if(!field)continue;const hasValue=Object.prototype.hasOwnProperty.call(editor.formValues,name),value=editor.formValues[name];try{if(field instanceof PDFTextField){if(hasValue)field.setText(pdfSafeText(value));const st=editor.formStyles[name];if(st){try{if(st.align)field.setAlignment(({left:0,center:1,right:2})[st.align]??0);if(st.color)field.setTextColor(pdfColor(st.color));}catch(_){}try{field.setFontSize(clamp(Number(st.fontSize)||10,5,72));}catch(_){ }try{field.updateAppearances(await getFont(st.fontName||'Helvetica'));}catch(err){console.warn('aparência campo',name,err);}}}else if(hasValue&&field instanceof PDFCheckBox)value?field.check():field.uncheck();else if(hasValue&&(field instanceof PDFDropdown||field instanceof PDFOptionList))field.select(pdfSafeText(value));else if(hasValue&&field instanceof PDFRadioGroup&&value)field.select(pdfSafeText(value));}catch(e){console.warn(name,e);}
     }
     for(const e of editor.edits){
       const p=pages[e.page-1];if(!p||e.kind==='imageTarget')continue;
@@ -596,7 +611,7 @@ async function savePdf(){
       }else{
         try{
           const f=form.createTextField(fieldName);if(e.h>(e.fontSize||10)*1.8||safe.includes('\n'))f.enableMultiline();f.setText(safe);try{f.setFontSize(clamp(Number(e.fontSize)||10,5,72));}catch(_){ }
-          const opts={x:e.x,y:e.y,width:Math.max(12,e.w),height:Math.max(12,e.h),borderWidth:0,textColor:rgb(0,0,0)};if(e.mask)opts.backgroundColor=rgb(1,1,1);f.addToPage(p,opts);try{f.updateAppearances(await getFont(e.fontName||'Helvetica'));}catch(err){console.warn('fonte campo',err);}
+          const opts={x:e.x,y:e.y,width:Math.max(12,e.w),height:Math.max(12,e.h),borderWidth:0,textColor:pdfColor(e.color)};if(e.mask)opts.backgroundColor=rgb(1,1,1);f.addToPage(p,opts);try{f.setAlignment(({left:0,center:1,right:2})[e.align]??0);}catch(_){}try{f.updateAppearances(await getFont(e.fontName||'Helvetica'));}catch(err){console.warn('fonte campo',err);}
         }catch(err){console.warn('campo editável',err);}
       }
     }
